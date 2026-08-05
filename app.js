@@ -48,6 +48,17 @@ document.addEventListener("DOMContentLoaded", () => {
   let cameraActive = false;
   let activeFilter = "THERMAL"; // THERMAL, CINEMATIC, GRAYSCALE, STANDARD
 
+  // --- Camera & Telemetry Sharing (Host) ---
+  const cameraChannel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('camera-shared-stream') : null;
+  let childWindows = [];
+
+  // Hidden canvas for resizing/sending raw camera frames
+  const sharingCanvas = document.createElement("canvas");
+  sharingCanvas.width = 640;
+  sharingCanvas.height = 360;
+  const sharingCtx = sharingCanvas.getContext("2d");
+  let lastShareTime = 0;
+
   // Offscreen canvas for thermal pixel processing (320x180 for retro pixelation + high performance)
   const thermalCanvas = document.createElement("canvas");
   thermalCanvas.width = 320;
@@ -418,6 +429,31 @@ document.addEventListener("DOMContentLoaded", () => {
   function processWebcamFeed() {
     const w = riderCanvas.width;
     const h = riderCanvas.height;
+
+    // Share raw webcam frame to Screen 7 (Receiver)
+    if (cameraActive && videoFeed.srcObject && videoFeed.readyState === videoFeed.HAVE_ENOUGH_DATA) {
+      const now = performance.now();
+      if (now - lastShareTime > 33) { // limit sharing to ~30 FPS
+        lastShareTime = now;
+        sharingCtx.drawImage(videoFeed, 0, 0, 640, 360);
+        sharingCanvas.toBlob((blob) => {
+          if (!blob) return;
+          const msg = { type: 'frame', blob };
+          if (cameraChannel) {
+            cameraChannel.postMessage(msg);
+          }
+          childWindows = childWindows.filter(win => {
+            try {
+              if (win.closed) return false;
+              win.postMessage(msg, '*');
+              return true;
+            } catch (e) {
+              return false;
+            }
+          });
+        }, 'image/jpeg', 0.6);
+      }
+    }
     
     if (activeFilter === "THERMAL") {
       // Draw input to offscreen canvas
@@ -1213,9 +1249,49 @@ document.addEventListener("DOMContentLoaded", () => {
     scaleIndicator.style.top = `${(1 - initialPct) * 100}%`;
   }
 
+  // --- Telemetry Sharing Sender ---
+  let lastTelemetrySendTime = 0;
+  function sendTelemetry() {
+    const now = performance.now();
+    if (now - lastTelemetrySendTime > 100) {
+      lastTelemetrySendTime = now;
+      const msg = {
+        type: 'telemetry',
+        speed: currentSpeed,
+        rotation: Math.max(-90, Math.min(90, (gpsCoords.heading - 184.2) * 5)),
+        cameraActive: cameraActive
+      };
+      if (cameraChannel) {
+        cameraChannel.postMessage(msg);
+      }
+      childWindows = childWindows.filter(win => {
+        try {
+          if (win.closed) return false;
+          win.postMessage(msg, '*');
+          return true;
+        } catch (e) {
+          return false;
+        }
+      });
+    }
+  }
+
+  // Open Screen 7 Event Listener
+  const btnOpenSns = document.getElementById("btn-open-sns");
+  if (btnOpenSns) {
+    btnOpenSns.addEventListener("click", () => {
+      playHapticTap(1100, 0.04, 0.02);
+      const child = window.open("../산학 7번 SNS/index.html", "Screen7");
+      if (child) {
+        childWindows.push(child);
+      }
+    });
+  }
+
   function mainRenderLoop(timestamp) {
     simulateTelemetry();
     processWebcamFeed();
+    sendTelemetry(); // Send telemetry to sharing channels
     drawTelemetryChart();
     drawResistanceChart();
     
