@@ -20,8 +20,8 @@ const MIME_TYPES = {
 };
 
 const server = http.createServer((req, res) => {
-  // Decode URL to handle Korean directory names properly
-  let reqPath = decodeURIComponent(req.url);
+  // Decode URL to handle Korean directory names properly and strip query parameters
+  let reqPath = decodeURIComponent(req.url).split('?')[0];
   
   // If base route is requested, provide a landing page
   if (reqPath === '/' || reqPath === '/index.html') {

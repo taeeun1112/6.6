@@ -89,6 +89,12 @@ body {
   color: var(--apple-blue);
 }
 
+.status-pill.active-success {
+  background-color: rgba(48, 209, 88, 0.1);
+  border-color: #30d158;
+  color: #30d158;
+}
+
 .nav-right {
   display: flex;
   align-items: center;
@@ -397,10 +403,10 @@ body {
   border: 1px solid var(--border-light);
   overflow-y: auto;
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
   grid-auto-rows: max-content;
-  gap: 12px;
-  padding: 14px;
+  gap: 16px;
+  padding: 18px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
 }
 
@@ -417,7 +423,7 @@ body {
 }
 
 .gallery-empty-state {
-  grid-column: span 2;
+  grid-column: span 1;
   color: var(--text-dark-gray);
   font-size: 13px;
   font-style: italic;
@@ -433,15 +439,37 @@ body {
   overflow: hidden;
   transition: transform var(--transition-fast), border-color var(--transition-fast);
   cursor: pointer;
-  opacity: 0;
-  transform: translateY(12px) scale(0.95);
+  opacity: 1;
   animation: gallery-card-appear 0.35s cubic-bezier(0.25, 1, 0.5, 1) forwards;
 }
 
 @keyframes gallery-card-appear {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.95);
+  }
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
+  }
+}
+
+.gallery-card.just-updated {
+  animation: card-update-flash 0.8s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+}
+
+@keyframes card-update-flash {
+  0% {
+    border-color: #00e5ff;
+    box-shadow: 0 0 15px rgba(0, 229, 255, 0.5);
+    transform: scale(1.02);
+    opacity: 1;
+  }
+  100% {
+    border-color: var(--border-light);
+    box-shadow: none;
+    transform: scale(1);
+    opacity: 1;
   }
 }
 
@@ -464,7 +492,7 @@ body {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  padding: 8px 10px;
+  padding: 12px 14px;
   pointer-events: none;
   background: linear-gradient(
     to bottom,
@@ -479,7 +507,7 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 9px;
+  font-size: 13px;
   font-weight: 800;
   letter-spacing: 0.5px;
   color: rgba(255, 255, 255, 0.85);
@@ -490,7 +518,7 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: flex-end;
-  font-size: 8px;
+  font-size: 11px;
   font-weight: 600;
   color: rgba(255, 255, 255, 0.6);
   font-variant-numeric: tabular-nums;
@@ -1740,6 +1768,170 @@ body {
   overflow: hidden;
   flex-shrink: 0;
 }
+
+/* ==========================================================================
+   CAMERA & SECURITY CONTEXT TOAST / NOTIFICATION UI
+   ========================================================================== */
+.raduga-toast-container {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 99999;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 440px;
+  pointer-events: none;
+}
+
+.raduga-toast {
+  background: rgba(22, 22, 26, 0.94);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  padding: 14px 18px;
+  color: #fff;
+  font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  pointer-events: auto;
+  animation: toast-slide-up 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  transition: all 0.3s ease;
+}
+
+.raduga-toast.toast-error {
+  border-color: rgba(255, 69, 58, 0.4);
+  background: rgba(36, 12, 14, 0.95);
+}
+
+.raduga-toast.toast-warning {
+  border-color: rgba(255, 159, 10, 0.4);
+  background: rgba(36, 26, 12, 0.95);
+}
+
+.raduga-toast.toast-success {
+  border-color: rgba(48, 209, 88, 0.4);
+  background: rgba(14, 34, 20, 0.95);
+}
+
+.toast-icon {
+  font-size: 20px;
+  line-height: 1;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.toast-body {
+  flex: 1;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.toast-title {
+  font-weight: 600;
+  font-size: 14px;
+  margin-bottom: 3px;
+  color: #fff;
+  letter-spacing: -0.2px;
+}
+
+.toast-desc {
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 12.5px;
+}
+
+.toast-action-btn {
+  margin-top: 8px;
+  display: inline-block;
+  background: rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #fff;
+  padding: 5px 12px;
+  border-radius: 8px;
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+  text-decoration: none;
+  transition: all 0.2s;
+}
+
+.toast-action-btn:hover {
+  background: #fff;
+  color: #000;
+}
+
+.toast-close-btn {
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 18px;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0;
+  margin-left: 4px;
+}
+
+.toast-close-btn:hover {
+  color: #fff;
+}
+
+@keyframes toast-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Top Security Banner for file:// Protocol */
+.file-protocol-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(90deg, #ff3b30, #ff9500);
+  color: #fff;
+  padding: 8px 16px;
+  font-size: 12.5px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  z-index: 100000;
+  box-shadow: 0 4px 20px rgba(255, 59, 48, 0.4);
+  animation: banner-drop 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.file-protocol-banner code {
+  background: rgba(0, 0, 0, 0.3);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 12px;
+}
+
+.file-protocol-banner a {
+  background: #fff;
+  color: #000;
+  padding: 3px 10px;
+  border-radius: 6px;
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 11px;
+}
+
+@keyframes banner-drop {
+  from { transform: translateY(-100%); }
+  to { transform: translateY(0); }
+}
+
 
 
 

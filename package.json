@@ -1,0 +1,13 @@
+{
+  "name": "raduga-mobility-stream",
+  "version": "1.0.0",
+  "description": "Raduga Mobility Stream & Telemetry Control Center",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "keywords": ["webrtc", "camera", "thermal", "telemetry"],
+  "author": "",
+  "license": "ISC"
+}

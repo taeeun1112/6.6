@@ -48,6 +48,15 @@ document.addEventListener("DOMContentLoaded", () => {
   let cameraActive = false;
   let activeFilter = "THERMAL"; // THERMAL, CINEMATIC, GRAYSCALE, STANDARD
 
+  // --- Gallery Rotation State ---
+  const galleryCards = [];
+  let currentGalleryIndex = 0;
+
+  // --- API State Variables ---
+  let apiActive = false;
+  let apiData = { x: 2500, y: 1500, rotation: 0 };
+  let apiFailureCount = 0;
+
   // --- Camera & Telemetry Sharing (Host) ---
   const cameraChannel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('camera-shared-stream') : null;
   let childWindows = [];
@@ -65,7 +74,7 @@ document.addEventListener("DOMContentLoaded", () => {
   thermalCanvas.height = 180;
   const thermalCtx = thermalCanvas.getContext("2d");
 
-  // Thermal Color Lookup Table (LUT)
+  // Thermal Color Lookup Table (LUT) - Ironbow Fire & Ice Gradient
   const thermalLUT = new Uint8ClampedArray(256 * 3);
   function initThermalLUT() {
     const canvas = document.createElement("canvas");
@@ -73,16 +82,20 @@ document.addEventListener("DOMContentLoaded", () => {
     canvas.height = 1;
     const ctx = canvas.getContext("2d");
     const grad = ctx.createLinearGradient(0, 0, 256, 0);
-    // Thermal colors matching user reference image
-    grad.addColorStop(0.0, "rgb(5, 5, 26)");       // Deep background blue/black
-    grad.addColorStop(0.12, "rgb(0, 0, 180)");     // Cold Blue
-    grad.addColorStop(0.25, "rgb(0, 180, 255)");   // Cyan
-    grad.addColorStop(0.4, "rgb(0, 220, 0)");      // Green
-    grad.addColorStop(0.58, "rgb(230, 230, 0)");   // Yellow
-    grad.addColorStop(0.72, "rgb(255, 100, 0)");   // Orange
-    grad.addColorStop(0.85, "rgb(240, 0, 120)");   // Magenta / Hot Pink
-    grad.addColorStop(0.96, "rgb(255, 100, 180)"); // Near white pink
-    grad.addColorStop(1.0, "rgb(255, 255, 255)");  // White Hot
+    // 0 ~ 70: Cold ambient background (Deep Navy / Indigo Blue)
+    // 70 ~ 130: Transition cool to warm (Teal / Violet / Ochre)
+    // 130 ~ 210: High Heat (Vibrant Crimson Red / Fiery Flame Red)
+    // 210 ~ 255: Extreme Peak Heat (Amber Yellow / White-Hot Core)
+    grad.addColorStop(0.00, "rgb(4, 4, 18)");       // 0: Deep background blue-black
+    grad.addColorStop(0.12, "rgb(8, 22, 95)");      // 30: Cold dark navy
+    grad.addColorStop(0.25, "rgb(0, 85, 165)");     // 64: Deep cool blue
+    grad.addColorStop(0.38, "rgb(0, 145, 175)");    // 97: Teal / Cyan-Blue
+    grad.addColorStop(0.50, "rgb(85, 30, 115)");    // 128: Indigo Violet
+    grad.addColorStop(0.62, "rgb(195, 20, 20)");    // 158: Deep Crimson Red
+    grad.addColorStop(0.74, "rgb(245, 40, 10)");    // 189: Vibrant Fiery Red
+    grad.addColorStop(0.86, "rgb(255, 120, 0)");    // 220: Blaze Orange-Red
+    grad.addColorStop(0.95, "rgb(255, 220, 35)");   // 242: Bright Yellow-Hot
+    grad.addColorStop(1.00, "rgb(255, 255, 255)");  // 255: White-Hot Core
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, 256, 1);
     const data = ctx.getImageData(0, 0, 256, 1).data;
@@ -93,6 +106,10 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
   initThermalLUT();
+
+  // Motion Detection & Human Heat Tracking Buffers (320x180)
+  const prevLumaBuffer = new Float32Array(320 * 180);
+  const motionHeatMap = new Float32Array(320 * 180);
 
   const mainMediaCard = document.getElementById("main-media-card");
   const thermalFaceBox = document.getElementById("thermal-face-box");
@@ -206,13 +223,17 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // --- Face Tracker Initialization ---
+  // --- Face Tracker & Human Detection Initialization ---
+  let lastFaceDetectedTime = 0;
+  let smoothFace = { x: 0, y: 0, width: 0, height: 0, active: false };
+
   function initFaceTracker() {
     if (typeof tracking !== "undefined") {
       faceTracker = new tracking.ObjectTracker("face");
-      faceTracker.setInitialScale(4);
-      faceTracker.setStepSize(2);
-      faceTracker.setEdgesDensity(0.1);
+      // Scale 1.8 allows detecting faces at realistic desk/webcam distances
+      faceTracker.setInitialScale(1.8);
+      faceTracker.setStepSize(1.5);
+      faceTracker.setEdgesDensity(0.08);
       
       faceTracker.on("track", (event) => {
         if (event.data && event.data.length > 0) {
@@ -224,24 +245,67 @@ document.addEventListener("DOMContentLoaded", () => {
             }
           }
           lastDetectedFace = largestFace;
+          lastFaceDetectedTime = performance.now();
+          smoothFace.active = true;
+          
+          // Smoothly lerp tracker box
+          smoothFace.x = smoothFace.x ? lerp(smoothFace.x, largestFace.x, 0.25) : largestFace.x;
+          smoothFace.y = smoothFace.y ? lerp(smoothFace.y, largestFace.y, 0.25) : largestFace.y;
+          smoothFace.width = smoothFace.width ? lerp(smoothFace.width, largestFace.width, 0.25) : largestFace.width;
+          smoothFace.height = smoothFace.height ? lerp(smoothFace.height, largestFace.height, 0.25) : largestFace.height;
         } else {
-          lastDetectedFace = null;
+          // If face is temporarily lost (e.g. tilted/blinked), remember last position for 2 seconds
+          if (performance.now() - lastFaceDetectedTime > 2000) {
+            lastDetectedFace = null;
+            smoothFace.active = false;
+          }
         }
       });
     }
   }
 
-  // --- Initialization ---
-  initFaceTracker();
-  setupWebcamCanvas();
-  updateFilterUI();
-  setupChartCanvas();
-  startClock();
-  updateSpeedGauge(currentSpeed);
-  
-  // Start Main Loop & Timers
-  mainLoopId = requestAnimationFrame(mainRenderLoop);
-  startSnapshotTimer();
+  // --- API Connection ---
+  function updateApiStatusBadge(active) {
+    const apiStatusBadge = document.getElementById("api-status-badge");
+    if (apiStatusBadge) {
+      if (active) {
+        apiStatusBadge.textContent = "API ACTIVE";
+        apiStatusBadge.className = "status-pill active-success";
+      } else {
+        apiStatusBadge.textContent = "API OFFLINE";
+        apiStatusBadge.className = "status-pill";
+      }
+    }
+  }
+
+  function pollPositionAPI() {
+    setInterval(() => {
+      fetch("https://position-api-generator.onrender.com/api/state")
+        .then(res => {
+          if (!res.ok) throw new Error("API response not ok");
+          return res.json();
+        })
+        .then(data => {
+          if (data && typeof data.x === 'number' && typeof data.y === 'number') {
+            apiData = data;
+            apiActive = true;
+            apiFailureCount = 0;
+            updateApiStatusBadge(true);
+          } else {
+            throw new Error("Invalid API data format");
+          }
+        })
+        .catch(err => {
+          apiFailureCount++;
+          if (apiFailureCount >= 3) {
+            apiActive = false;
+            updateApiStatusBadge(false);
+          }
+        });
+    }, 2000);
+  }
+
+
 
   // --- 1. Top Bar Clock ---
   function startClock() {
@@ -257,11 +321,17 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // --- 2. Telemetry and Speed logic ---
-  function updateSpeedGauge(val) {
-    currentSpeed = val;
+  let isManualSpeedOverride = false;
+  let manualSpeedTimer = null;
+  let isDraggingSlider = false;
+
+  function updateSpeedGauge(val, syncSlider = true) {
+    currentSpeed = Math.max(0, Math.min(150, val));
     hudSpeedVal.textContent = Math.round(currentSpeed);
     sliderSpeedVal.textContent = `${Math.round(currentSpeed)} KM/H`;
-    speedSlider.value = Math.round(currentSpeed);
+    if (syncSlider && !isDraggingSlider) {
+      speedSlider.value = Math.round(currentSpeed);
+    }
     
     // speed scale calculation
     const factor = (currentSpeed / 45).toFixed(1);
@@ -274,48 +344,80 @@ document.addEventListener("DOMContentLoaded", () => {
     return (1 - amt) * start + amt * end;
   }
 
-  speedSlider.addEventListener("input", (e) => {
+  function handleSliderInput(e) {
+    isManualSpeedOverride = true;
+    isDraggingSlider = true;
     if (autoDriveActive) {
       autoDriveActive = false;
       btnAutoPilot.classList.remove("active");
     }
-    targetSpeed = parseFloat(e.target.value);
+    const val = parseFloat(e.target.value);
+    targetSpeed = val;
+    currentSpeed = val;
+    updateSpeedGauge(val, false);
     
     // Play light scroll clicking sound
-    if (Math.round(e.target.value) % 8 === 0) {
-      playHapticTap(1000 + parseFloat(e.target.value) * 3, 0.015, 0.01);
+    if (Math.round(val) % 8 === 0) {
+      playHapticTap(1000 + val * 3, 0.015, 0.01);
     }
-  });
+
+    // Keep manual control active for 8 seconds after last interaction
+    clearTimeout(manualSpeedTimer);
+    manualSpeedTimer = setTimeout(() => {
+      isManualSpeedOverride = false;
+      isDraggingSlider = false;
+    }, 8000);
+  }
+
+  speedSlider.addEventListener("input", handleSliderInput);
+  speedSlider.addEventListener("change", handleSliderInput);
+  speedSlider.addEventListener("mousedown", () => { isDraggingSlider = true; isManualSpeedOverride = true; });
+  speedSlider.addEventListener("mouseup", () => { isDraggingSlider = false; });
+  speedSlider.addEventListener("touchstart", () => { isDraggingSlider = true; isManualSpeedOverride = true; }, { passive: true });
+  speedSlider.addEventListener("touchend", () => { isDraggingSlider = false; });
 
   function simulateTelemetry() {
     animationTime += 0.01;
     
-    if (autoDriveActive) {
-      let baseSpeed = 55;
-      targetSpeed = baseSpeed 
-        + Math.sin(animationTime * 0.4) * 22 
-        + Math.cos(animationTime * 1.5) * 6;
-      targetSpeed = Math.max(0, Math.min(145, targetSpeed));
+    if (!isManualSpeedOverride) {
+      if (apiActive) {
+        // Map API y (0 ~ 5000) to speed (0 ~ 150 KM/H)
+        targetSpeed = Math.max(0, Math.min(150, (apiData.y / 5000) * 150));
+        // Map API x (0 ~ 5000) to resistance (0 ~ 100 %)
+        currentResistance = Math.max(0, Math.min(100, Math.round((apiData.x / 5000) * 100)));
+      } else {
+        if (autoDriveActive) {
+          let baseSpeed = 55;
+          targetSpeed = baseSpeed 
+            + Math.sin(animationTime * 0.4) * 22 
+            + Math.cos(animationTime * 1.5) * 6;
+          targetSpeed = Math.max(0, Math.min(145, targetSpeed));
+        }
+      }
     }
 
-    // Apply smooth interpolation to current speed (increased to 0.3 for snappy feedback)
-    const easedSpeed = lerp(currentSpeed, targetSpeed, 0.3);
-    updateSpeedGauge(easedSpeed);
+    if (!isDraggingSlider) {
+      // Apply smooth interpolation to current speed
+      const easedSpeed = lerp(currentSpeed, targetSpeed, 0.25);
+      updateSpeedGauge(easedSpeed, !isManualSpeedOverride);
+    }
 
     // Save history
     speedHistory.push(currentSpeed);
     speedHistory.shift();
 
-    // Joystick Resistance Simulation (Dynamic connection to speed & physical sensor jitter)
-    if (currentSpeed <= 0.05) {
-      currentResistance = 0;
-    } else {
-      let baseRes = 35;
-      let resWave = Math.sin(animationTime * 2.0) * 20 + Math.cos(animationTime * 0.8) * 10;
-      let speedInfluence = (currentSpeed / 150) * 35;
-      // High-frequency jitter to represent real-time active load
-      let jitter = (Math.random() - 0.5) * 6;
-      currentResistance = Math.max(1, Math.min(100, Math.round(baseRes + resWave + speedInfluence + jitter)));
+    if (!apiActive) {
+      // Joystick Resistance Simulation (Dynamic connection to speed & physical sensor jitter)
+      if (currentSpeed <= 0.05) {
+        currentResistance = 0;
+      } else {
+        let baseRes = 35;
+        let resWave = Math.sin(animationTime * 2.0) * 20 + Math.cos(animationTime * 0.8) * 10;
+        let speedInfluence = (currentSpeed / 150) * 35;
+        // High-frequency jitter to represent real-time active load
+        let jitter = (Math.random() - 0.5) * 6;
+        currentResistance = Math.max(1, Math.min(100, Math.round(baseRes + resWave + speedInfluence + jitter)));
+      }
     }
     
     resistanceHistory.push(currentResistance);
@@ -345,55 +447,248 @@ document.addEventListener("DOMContentLoaded", () => {
     return dirs[idx];
   }
 
+  // --- Raduga UI Toast & Notifications ---
+  let toastContainer = null;
+  function showToast(title, desc, type = "info", actionBtn = null) {
+    if (!toastContainer) {
+      toastContainer = document.createElement("div");
+      toastContainer.className = "raduga-toast-container";
+      document.body.appendChild(toastContainer);
+    }
+    const toast = document.createElement("div");
+    toast.className = `raduga-toast toast-${type}`;
+    
+    let icon = "ℹ️";
+    if (type === "error") icon = "⚠️";
+    if (type === "warning") icon = "🔔";
+    if (type === "success") icon = "✅";
+
+    let actionHtml = "";
+    if (actionBtn && actionBtn.text && actionBtn.url) {
+      actionHtml = `<a href="${actionBtn.url}" class="toast-action-btn" target="_blank">${actionBtn.text}</a>`;
+    } else if (actionBtn && actionBtn.text && actionBtn.onClick) {
+      actionHtml = `<button class="toast-action-btn">${actionBtn.text}</button>`;
+    }
+
+    toast.innerHTML = `
+      <div class="toast-icon">${icon}</div>
+      <div class="toast-body">
+        <div class="toast-title">${title}</div>
+        <div class="toast-desc">${desc}</div>
+        ${actionHtml}
+      </div>
+      <button class="toast-close-btn">&times;</button>
+    `;
+
+    toast.querySelector(".toast-close-btn").addEventListener("click", () => {
+      toast.remove();
+    });
+
+    if (actionBtn && actionBtn.onClick) {
+      const btn = toast.querySelector(".toast-action-btn");
+      if (btn) {
+        btn.addEventListener("click", () => {
+          actionBtn.onClick();
+          toast.remove();
+        });
+      }
+    }
+
+    toastContainer.appendChild(toast);
+    setTimeout(() => {
+      if (toast.parentElement) {
+        toast.style.opacity = "0";
+        toast.style.transform = "translateY(16px)";
+        setTimeout(() => toast.remove(), 350);
+      }
+    }, 7000);
+  }
+
+  function addEventLog(msg) {
+    console.log(`[Raduga Telemetry] ${msg}`);
+  }
+
+  // Check file:// protocol warning on load
+  if (window.location.protocol === "file:") {
+    const banner = document.createElement("div");
+    banner.className = "file-protocol-banner";
+    banner.innerHTML = `
+      <span>⚠️ 로컬 파일(file://)로 접속되었습니다. 크롬 보안 정책상 카메라 연동을 위해 로컬 서버 실행이 권장됩니다.</span>
+      <code>node server.js</code>
+      <a href="http://localhost:3000/산학%206번%20데이터:홈페이지/index.html" target="_self">http://localhost:3000 으로 열기</a>
+    `;
+    document.body.prepend(banner);
+  }
+
   // --- 3. Camera Controls & Captures ---
   function setupWebcamCanvas() {
     riderCanvas.width = 1280;
     riderCanvas.height = 720;
   }
 
-  btnCameraPower.addEventListener("click", () => {
-    playHapticTap(1200, 0.04, 0.02);
-    if (!cameraActive) {
-      // Turn Camera ON
-      navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 }, audio: false })
-        .then((stream) => {
-          videoFeed.srcObject = stream;
-          cameraActive = true;
-          btnCameraPower.textContent = "Stop Camera";
-          btnCameraPower.classList.add("active");
-          gpsStatusBadge.textContent = "GPS LOCKED & STREAMING";
-          gpsStatusBadge.classList.add("active");
-          
-          // Start face tracking
-          if (faceTracker && !trackerTask) {
-            trackerTask = tracking.track('#webcam-feed', faceTracker);
-          }
-        })
-        .catch(() => {
-          // Fallback activated silently
-          cameraActive = false;
-          btnCameraPower.textContent = "Stop Fallback";
-          btnCameraPower.classList.add("active");
-          cameraActive = true; // Set active true so we draw fallback loop
-        });
-    } else {
-      // Turn Camera OFF
-      const stream = videoFeed.srcObject;
-      if (stream) {
-        stream.getTracks().forEach(track => track.stop());
+  async function requestUserCameraStream() {
+    // Check if mediaDevices API is supported
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      const legacyGetUserMedia = navigator.getUserMedia || navigator.webkitGetUserMedia || navigator.mozGetUserMedia || navigator.msGetUserMedia;
+      if (!legacyGetUserMedia) {
+        throw new Error("MEDIA_DEVICES_UNSUPPORTED");
       }
-      videoFeed.srcObject = null;
+      return new Promise((resolve, reject) => {
+        legacyGetUserMedia.call(navigator, { video: true, audio: false }, resolve, reject);
+      });
+    }
+
+    // Try ideal high quality HD constraint first
+    try {
+      return await navigator.mediaDevices.getUserMedia({
+        video: {
+          width: { ideal: 1280, max: 1920 },
+          height: { ideal: 720, max: 1080 },
+          facingMode: "user"
+        },
+        audio: false
+      });
+    } catch (err) {
+      console.warn("High-res constraint failed, falling back to standard video constraint:", err);
+      // Fallback 1: Standard definition
+      try {
+        return await navigator.mediaDevices.getUserMedia({
+          video: {
+            width: { ideal: 640 },
+            height: { ideal: 480 },
+            facingMode: "user"
+          },
+          audio: false
+        });
+      } catch (err2) {
+        console.warn("Standard constraint failed, falling back to basic video:", err2);
+        // Fallback 2: Plain video
+        return await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: false
+        });
+      }
+    }
+  }
+
+  async function startWebcam() {
+    btnCameraPower.textContent = "Connecting...";
+    try {
+      const stream = await requestUserCameraStream();
+      videoFeed.srcObject = stream;
+
+      // Wait until video metadata is loaded and video is playing
+      await new Promise((resolve) => {
+        if (videoFeed.readyState >= 2) {
+          resolve();
+        } else {
+          videoFeed.onloadedmetadata = () => {
+            resolve();
+          };
+          setTimeout(resolve, 3000);
+        }
+      });
+
+      try {
+        await videoFeed.play();
+      } catch (playErr) {
+        console.warn("Video play promise error (often harmless):", playErr);
+      }
+
+      cameraActive = true;
+      btnCameraPower.textContent = "Stop Camera";
+      btnCameraPower.classList.add("active");
+      gpsStatusBadge.textContent = "GPS LOCKED & STREAMING";
+      gpsStatusBadge.classList.add("active");
+
+      // Stream track ended handler (e.g. camera unplugged)
+      stream.getVideoTracks().forEach(track => {
+        track.onended = () => {
+          stopWebcam();
+          showToast("카메라 연결 종료", "카메라 장치가 분리되었거나 중단되었습니다.", "warning");
+        };
+      });
+
+      // Start face tracking
+      if (faceTracker && !trackerTask) {
+        try {
+          trackerTask = tracking.track('#webcam-feed', faceTracker);
+        } catch (tErr) {
+          console.warn("Face tracker start error:", tErr);
+        }
+      }
+
+      showToast("카메라 연동 성공", "웹캠 실시간 피드가 정상적으로 연결되었습니다.", "success");
+    } catch (err) {
+      console.error("Camera access failed:", err);
       cameraActive = false;
       btnCameraPower.textContent = "Start Camera";
       btnCameraPower.classList.remove("active");
-      gpsStatusBadge.textContent = "GPS LOCKED";
-      
-      // Stop face tracking
-      if (trackerTask) {
-        trackerTask.stop();
-        trackerTask = null;
-        lastDetectedFace = null;
+
+      if (err.message === "MEDIA_DEVICES_UNSUPPORTED" || (window.location.protocol === "file:")) {
+        showToast(
+          "카메라 접근 제한 (보안 정책)",
+          "크롬 보안 정책상 file:// 프로토콜에서는 카메라를 열 수 없습니다. 'node server.js'를 실행해 http://localhost:3000 으로 접속해주세요.",
+          "error",
+          {
+            text: "서버로 열기 (http://localhost:3000)",
+            url: "http://localhost:3000/산학%206번%20데이터:홈페이지/index.html"
+          }
+        );
+      } else if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
+        showToast(
+          "카메라 권한 거부됨",
+          "크롬 주소창 좌측의 🔒 아이콘(또는 사이트 설정)을 클릭하여 '카메라 허용'으로 변경해주세요.",
+          "error"
+        );
+      } else if (err.name === "NotFoundError" || err.name === "DevicesNotFoundError") {
+        showToast(
+          "카메라 장치 없음",
+          "사용 가능한 웹캠 장치를 찾을 수 없습니다. 외장/내장 카메라 연결을 확인해주세요.",
+          "error"
+        );
+      } else if (err.name === "NotReadableError" || err.name === "TrackStartError") {
+        showToast(
+          "카메라 사용 중",
+          "다른 프로그램(FaceTime, Zoom, OBS 등)에서 카메라를 이미 사용 중일 수 있습니다.",
+          "warning"
+        );
+      } else {
+        showToast(
+          "카메라 오류",
+          `웹캠을 시작하지 못했습니다: ${err.message || err.name || '알 수 없는 오류'}`,
+          "error"
+        );
       }
+    }
+  }
+
+  function stopWebcam() {
+    const stream = videoFeed.srcObject;
+    if (stream) {
+      stream.getTracks().forEach(track => track.stop());
+    }
+    videoFeed.srcObject = null;
+    cameraActive = false;
+    btnCameraPower.textContent = "Start Camera";
+    btnCameraPower.classList.remove("active");
+    gpsStatusBadge.textContent = "GPS LOCKED";
+    gpsStatusBadge.classList.remove("active");
+
+    // Stop face tracking
+    if (trackerTask) {
+      trackerTask.stop();
+      trackerTask = null;
+      lastDetectedFace = null;
+    }
+  }
+
+  btnCameraPower.addEventListener("click", () => {
+    playHapticTap(1200, 0.04, 0.02);
+    if (!cameraActive) {
+      startWebcam();
+    } else {
+      stopWebcam();
     }
   });
 
@@ -433,7 +728,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // Share raw webcam frame to Screen 7 (Receiver)
     if (cameraActive && videoFeed.srcObject && videoFeed.readyState === videoFeed.HAVE_ENOUGH_DATA) {
       const now = performance.now();
-      if (now - lastShareTime > 33) { // limit sharing to ~30 FPS
+      if (now - lastShareTime > 66) { // limit sharing to ~15 FPS to reduce CPU/memory overhead
         lastShareTime = now;
         sharingCtx.drawImage(videoFeed, 0, 0, 640, 360);
         sharingCanvas.toBlob((blob) => {
@@ -456,148 +751,193 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     
     if (activeFilter === "THERMAL") {
-      // Draw input to offscreen canvas
       const tw = thermalCanvas.width;
       const th = thermalCanvas.height;
-      
+      const speedRatio = Math.min(1.0, currentSpeed / 130);
+      const speedHeatFactor = Math.pow(speedRatio, 0.75); // Speed heat boost curve
+
       if (cameraActive && videoFeed.srcObject && videoFeed.readyState === videoFeed.HAVE_ENOUGH_DATA) {
+        // Draw current webcam frame to offscreen canvas
         thermalCtx.drawImage(videoFeed, 0, 0, tw, th);
+        const imgData = thermalCtx.getImageData(0, 0, tw, th);
+        const pixels = imgData.data;
+
+        // Calculate face and upper body heat center if face is detected (or smoothed from memory)
+        let hasFace = false;
+        let headCx = 0, headCy = 0, headR = 0;
+        let bodyCx = 0, bodyCy = 0, bodyRx = 0, bodyRy = 0;
+
+        if (smoothFace.active && smoothFace.width > 0) {
+          hasFace = true;
+          const vw = videoFeed.videoWidth || 1280;
+          const vh = videoFeed.videoHeight || 720;
+          const fx = (smoothFace.x / vw) * tw;
+          const fy = (smoothFace.y / vh) * th;
+          const fw = (smoothFace.width / vw) * tw;
+          const fh = (smoothFace.height / vh) * th;
+
+          headCx = fx + fw * 0.5;
+          headCy = fy + fh * 0.5;
+          headR = Math.max(fw, fh) * 0.7;
+
+          bodyCx = headCx;
+          bodyCy = headCy + fh * 1.35;
+          bodyRx = fw * 1.5;
+          bodyRy = fh * 1.8;
+        }
+
+        // Process each pixel: Motion Detection + Human Face/Body Detection + Skin Chrominance + Speed Heat Boost
+        for (let y = 0; y < th; y++) {
+          for (let x = 0; x < tw; x++) {
+            const idx = y * tw + x;
+            const pIdx = idx * 4;
+            const r = pixels[pIdx];
+            const g = pixels[pIdx + 1];
+            const b = pixels[pIdx + 2];
+
+            // 1. Grayscale luminance
+            const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+
+            // 2. Motion Detection (Frame Differencing)
+            const prevLum = prevLumaBuffer[idx];
+            const diff = Math.abs(lum - prevLum);
+            prevLumaBuffer[idx] = lum;
+
+            if (diff > 7) {
+              motionHeatMap[idx] = Math.min(1.0, motionHeatMap[idx] + diff * 0.06);
+            } else {
+              motionHeatMap[idx] *= 0.91; // Smooth heat trail decay
+            }
+            const motionVal = motionHeatMap[idx];
+
+            // 3. Human Face & Body Spatial Heat Zone
+            let humanVal = 0;
+            if (hasFace) {
+              const dxH = (x - headCx) / headR;
+              const dyH = (y - headCy) / headR;
+              const distHead = dxH * dxH + dyH * dyH;
+              if (distHead < 1.4) {
+                humanVal = Math.max(humanVal, Math.max(0, 1.0 - distHead / 1.4));
+              }
+
+              const dxB = (x - bodyCx) / bodyRx;
+              const dyB = (y - bodyCy) / bodyRy;
+              const distBody = dxB * dxB + dyB * dyB;
+              if (distBody < 1.6) {
+                humanVal = Math.max(humanVal, Math.max(0, 0.9 - distBody / 1.6));
+              }
+            }
+
+            // 4. Skin Chrominance / Human Warmth Heuristic (detect hands, skin, neck)
+            const isSkinLike = (r > 60 && g > 30 && b > 20 && r > g && (r - b) > 8 && (r - g) > 5);
+            if (isSkinLike) {
+              humanVal = Math.max(humanVal, 0.65);
+            }
+
+            // 5. Combined Activity Weight for Subject (0.0 = static background, 1.0 = active human/motion)
+            const activity = Math.min(1.0, humanVal * 1.2 + motionVal * 1.4);
+
+            // 6. Thermal Mapping:
+            // Static Background: Cold ambient Navy / Blue (20 ~ 55 in LUT) - does NOT turn red at high speed
+            const ambientTemp = 18 + (lum / 255) * 30;
+
+            // Human / Motion Subject:
+            // At 0 km/h: Warm violet/teal (~75-95)
+            // At high speed: Turns vibrant Crimson Red -> Fiery Flame Red (160 ~ 230+)
+            const baseHumanWarmth = activity * 48;
+            const speedHeatBoost = activity * (speedHeatFactor * 165);
+
+            let finalThermal = ambientTemp + baseHumanWarmth + speedHeatBoost;
+
+            // Subtle thermal sensor noise on active areas
+            if (activity > 0.05) {
+              finalThermal += (Math.random() - 0.5) * 4;
+            }
+
+            // Clamp to 0 ~ 255
+            const lutIdx = Math.max(0, Math.min(255, Math.round(finalThermal)));
+
+            pixels[pIdx] = thermalLUT[lutIdx * 3];
+            pixels[pIdx + 1] = thermalLUT[lutIdx * 3 + 1];
+            pixels[pIdx + 2] = thermalLUT[lutIdx * 3 + 2];
+          }
+        }
+
+        thermalCtx.putImageData(imgData, 0, 0);
+
       } else {
-        // Draw Simulated Grayscale Thermal Scene
-        thermalCtx.fillStyle = "rgb(15, 15, 22)"; // Ambient background temperature (Cold)
+        // --- Simulated Fallback Scene (When Camera is OFF) ---
+        // Ambient background (Cold Blue)
+        thermalCtx.fillStyle = "rgb(6, 8, 22)";
         thermalCtx.fillRect(0, 0, tw, th);
-        
-        // Faint background warmth structures (e.g. wall panels, warm screen)
-        thermalCtx.fillStyle = "rgb(35, 35, 45)";
+
+        // Faint background structures (Cold dark navy)
+        thermalCtx.fillStyle = "rgb(15, 20, 45)";
         thermalCtx.fillRect(40, 30, 80, 70);
         thermalCtx.fillRect(200, 40, 70, 80);
-        // Synchronize simulated patrol coordinates with the smooth eased coordinates
+
         patrolX = (currentBoxX / 100) * tw;
         patrolY = (currentBoxY / 100) * th;
-            const nonLinearSpeedRatio = getNonLinearSpeedRatio(currentSpeed);
-        
-        // Dynamic coupling connection: resistance affects thermal heat signature size/brightness functionally
+
         const effectiveHeatMultiplier = thermalHeatMultiplier + (currentResistance / 100) * 0.4;
-        
-        // Heat core size expands as speed goes up, amplified by heat factor
-        const headRadius = 22 + nonLinearSpeedRatio * 14 * effectiveHeatMultiplier;
-        const torsoWidth = 46 + nonLinearSpeedRatio * 20 * effectiveHeatMultiplier;
-        const torsoHeight = 40 + nonLinearSpeedRatio * 12 * effectiveHeatMultiplier;
-        
-        // Grayscale intensities (hot spots start cold (around ambient 15) and get hotter as speed goes up)
-        const torsoIntensity = Math.min(255, Math.round(15 + nonLinearSpeedRatio * 155 * effectiveHeatMultiplier));
-        const headIntensity = Math.min(255, Math.round(15 + nonLinearSpeedRatio * 225 * effectiveHeatMultiplier));
-        const faceIntensity = Math.min(255, Math.round(15 + nonLinearSpeedRatio * 235 * effectiveHeatMultiplier));
-        const eyeIntensity = Math.min(255, Math.round(15 + nonLinearSpeedRatio * 240 * effectiveHeatMultiplier));
-        
-        // We'll draw with a blur filter to blend the heat signatures naturally
-        thermalCtx.filter = "blur(8px)";
-        
-        // Torso/shoulders
+        const headRadius = 20 + speedHeatFactor * 12 * effectiveHeatMultiplier;
+        const torsoWidth = 44 + speedHeatFactor * 18 * effectiveHeatMultiplier;
+        const torsoHeight = 38 + speedHeatFactor * 10 * effectiveHeatMultiplier;
+
+        // Subject intensities: Cold when stopped (lum ~ 50), very hot red/bright when speed is high (lum ~ 180-245)
+        const baseCold = 45;
+        const torsoIntensity = Math.min(255, Math.round(baseCold + speedHeatFactor * 160 * effectiveHeatMultiplier));
+        const headIntensity = Math.min(255, Math.round(baseCold + speedHeatFactor * 185 * effectiveHeatMultiplier));
+        const faceIntensity = Math.min(255, Math.round(baseCold + speedHeatFactor * 195 * effectiveHeatMultiplier));
+        const eyeIntensity = Math.min(255, Math.round(baseCold + speedHeatFactor * 205 * effectiveHeatMultiplier));
+
+        thermalCtx.filter = "blur(7px)";
+
+        // Torso
         thermalCtx.fillStyle = `rgb(${torsoIntensity}, ${torsoIntensity}, ${torsoIntensity})`;
         thermalCtx.beginPath();
-        thermalCtx.ellipse(patrolX, patrolY + 60, torsoWidth, torsoHeight, 0, 0, 2 * Math.PI);
+        thermalCtx.ellipse(patrolX, patrolY + 55, torsoWidth, torsoHeight, 0, 0, 2 * Math.PI);
         thermalCtx.fill();
-        
-        // Head/neck
+
+        // Head
         thermalCtx.fillStyle = `rgb(${headIntensity}, ${headIntensity}, ${headIntensity})`;
         thermalCtx.beginPath();
         thermalCtx.arc(patrolX, patrolY, headRadius, 0, 2 * Math.PI);
         thermalCtx.fill();
-        
-        // Face center
+
+        // Face core
         thermalCtx.fillStyle = `rgb(${faceIntensity}, ${faceIntensity}, ${faceIntensity})`;
         thermalCtx.beginPath();
-        thermalCtx.ellipse(patrolX, patrolY, headRadius * 0.5, headRadius * 0.7, 0, 0, 2 * Math.PI);
+        thermalCtx.ellipse(patrolX, patrolY, headRadius * 0.55, headRadius * 0.7, 0, 0, 2 * Math.PI);
         thermalCtx.fill();
-        
-        // Eyes/nose (White hot core)
+
+        // Eyes & nose
         thermalCtx.fillStyle = `rgb(${eyeIntensity}, ${eyeIntensity}, ${eyeIntensity})`;
         thermalCtx.beginPath();
         thermalCtx.arc(patrolX - (headRadius * 0.25), patrolY - (headRadius * 0.15), headRadius * 0.15, 0, 2 * Math.PI);
         thermalCtx.arc(patrolX + (headRadius * 0.25), patrolY - (headRadius * 0.15), headRadius * 0.15, 0, 2 * Math.PI);
         thermalCtx.arc(patrolX, patrolY + (headRadius * 0.1), headRadius * 0.1, 0, 2 * Math.PI);
         thermalCtx.fill();
-        // Hot handheld device/helmet signature (e.g. coffee mug / target element) - also scales down to cold base when stopped
-        const itemIntensity1 = Math.min(255, Math.round(15 + nonLinearSpeedRatio * 200 * effectiveHeatMultiplier));
-        const itemIntensity2 = Math.min(255, Math.round(15 + nonLinearSpeedRatio * 237 * effectiveHeatMultiplier));
-        const itemX = patrolX - 45;
-        const itemY = patrolY + 53;
-        thermalCtx.fillStyle = `rgb(${itemIntensity1}, ${itemIntensity1}, ${itemIntensity1})`;
-        thermalCtx.beginPath();
-        thermalCtx.arc(itemX, itemY, 16, 0, 2 * Math.PI);
-        thermalCtx.fill();
-        thermalCtx.fillStyle = `rgb(${itemIntensity2}, ${itemIntensity2}, ${itemIntensity2})`;
-        thermalCtx.beginPath();
-        thermalCtx.arc(itemX, itemY, 8, 0, 2 * Math.PI);
-        thermalCtx.fill();
-        
-        // Ambient air heat anomalies floating up (also fade out to cold ambient 15 when stopped)
-        for (let i = 0; i < 3; i++) {
-          const tIdx = (animationTime * 0.5 + i * 0.3) % 1.0;
-          const fx = 60 + i * 80 + Math.sin(animationTime + i) * 15;
-          const fy = th - (tIdx * th);
-          const fRadius = 8 + (1.0 - tIdx) * 12;
-          
-          const anomalyIntensity = Math.min(255, Math.round(15 + nonLinearSpeedRatio * 45));
-          thermalCtx.fillStyle = `rgb(${anomalyIntensity}, ${anomalyIntensity}, ${anomalyIntensity})`;
-          thermalCtx.beginPath();
-          thermalCtx.arc(fx, fy, fRadius, 0, 2 * Math.PI);
-          thermalCtx.fill();
-        }
-        
-        thermalCtx.filter = "none"; // Reset filter
-      }
-      
-      // Extract pixels and apply LUT mapping
-      const imgData = thermalCtx.getImageData(0, 0, tw, th);
-      const pixels = imgData.data;
-      
-      // Dynamic noise overlay for sensor feel
-      const noiseVal = 6;
-      
-      for (let i = 0; i < pixels.length; i += 4) {
-        const r = pixels[i];
-        const g = pixels[i + 1];
-        const b = pixels[i + 2];
-        
-        // Grayscale conversion
-        let val = 0.299 * r + 0.587 * g + 0.114 * b;
-        
-        // Add subtle pixel noise for webcam feed
-        if (cameraActive) {
-          const noise = (Math.random() - 0.5) * noiseVal;
-          val += noise;
-        }
 
-        // Apply non-linear speed mapping to color intensity
-        const nonLinearSpeedRatio = getNonLinearSpeedRatio(currentSpeed);
-        val = val * nonLinearSpeedRatio;
-        
-        // Thermal span dynamic sensitivity scaling with NaN guard
-        const currentCeiling = (maxScaleTemp && !isNaN(maxScaleTemp)) ? maxScaleTemp : 80;
-        const scaleFactor = 80 / currentCeiling;
-        val = val * scaleFactor;
+        thermalCtx.filter = "none";
 
-        // Expand contrast slightly to make colors pop
-        val = (val - 110) * 1.4 + 110;
-        
-        // Clamp
-        if (val < 0) val = 0;
-        if (val > 255) val = 255;
-        
-        const idx = Math.round(val);
-        pixels[i] = thermalLUT[idx * 3];
-        pixels[i + 1] = thermalLUT[idx * 3 + 1];
-        pixels[i + 2] = thermalLUT[idx * 3 + 2];
+        // Map simulated scene through thermal LUT
+        const simImg = thermalCtx.getImageData(0, 0, tw, th);
+        const simPixels = simImg.data;
+        for (let i = 0; i < simPixels.length; i += 4) {
+          const lum = simPixels[i];
+          const lutIdx = Math.max(0, Math.min(255, lum));
+          simPixels[i] = thermalLUT[lutIdx * 3];
+          simPixels[i + 1] = thermalLUT[lutIdx * 3 + 1];
+          simPixels[i + 2] = thermalLUT[lutIdx * 3 + 2];
+        }
+        thermalCtx.putImageData(simImg, 0, 0);
       }
-      
-      thermalCtx.putImageData(imgData, 0, 0);
-      
+
       // Draw back to main canvas with retro pixelated stretching
       riderCtx.imageSmoothingEnabled = false;
       riderCtx.drawImage(thermalCanvas, 0, 0, w, h);
-      
+
       // Update dynamic HUD overlays
       updateThermalOverlayTracker();
     } else {
@@ -647,22 +987,22 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     }
   }
+
   function updateThermalOverlayTracker() {
     if (activeFilter !== "THERMAL") return;
     
     // 1. Dynamic temperature value based on speed and multiplier
-    let currentTemp;
-    const nonLinearSpeedRatio = getNonLinearSpeedRatio(currentSpeed);
-    
-    if (currentSpeed <= 0.05) {
-      currentTemp = 0.0;
-    } else {
-      const currentCeiling = (maxScaleTemp && !isNaN(maxScaleTemp)) ? maxScaleTemp : 80;
-      const speedHeat = nonLinearSpeedRatio * currentCeiling;
-      const fluctuation = Math.sin(animationTime * 2.5) * 0.25;
-      const noise = (Math.random() - 0.5) * 0.08;
-      currentTemp = Math.max(0.1, Math.min(currentCeiling, speedHeat + fluctuation + noise));
-    }
+    const speedRatio = Math.min(1.0, currentSpeed / 130);
+    const speedHeatFactor = Math.pow(speedRatio, 0.75);
+
+    const baseTemp = 24.5;
+    const maxCeiling = (maxScaleTemp && !isNaN(maxScaleTemp)) ? maxScaleTemp : 80;
+    const dynamicRange = maxCeiling - baseTemp;
+
+    const fluctuation = Math.sin(animationTime * 2.2) * 0.3;
+    const noise = (Math.random() - 0.5) * 0.1;
+    let currentTemp = baseTemp + (speedHeatFactor * dynamicRange) + fluctuation + noise;
+    currentTemp = Math.max(20.0, Math.min(maxCeiling + 5, currentTemp));
     
     if (thermalTempVal) {
       thermalTempVal.textContent = currentTemp.toFixed(1);
@@ -678,11 +1018,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // 2. Position tracking coordinates (using actual webcam face detection or fallback telemetry)
     let targetBoxX, targetBoxY;
-    if (cameraActive && lastDetectedFace) {
+    if (cameraActive && smoothFace.active && smoothFace.width > 0) {
       const vw = videoFeed.videoWidth || 1280;
       const vh = videoFeed.videoHeight || 720;
-      const cx = lastDetectedFace.x + lastDetectedFace.width / 2;
-      const cy = lastDetectedFace.y + lastDetectedFace.height / 2;
+      const cx = smoothFace.x + smoothFace.width / 2;
+      const cy = smoothFace.y + smoothFace.height / 2;
       
       // Convert pixel center coordinates to percentages of video size
       targetBoxX = (cx / vw) * 100;
@@ -704,13 +1044,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // Dynamic Scale Indicator follows the speed-mapped temperature if not being dragged
     if (scaleIndicator && !isDraggingScale) {
-      const topPct = (1 - nonLinearSpeedRatio) * 100;
+      const topPct = (1 - speedHeatFactor) * 100;
       scaleIndicator.style.top = `${topPct}%`;
     }
 
     // 3. Update Calibration load bar
     if (calCorrelationBar) {
-      calCorrelationBar.style.width = `${Math.round(nonLinearSpeedRatio * 100)}%`;
+      calCorrelationBar.style.width = `${Math.round(speedHeatFactor * 100)}%`;
     }
 
     // 4. Keep date up-to-date
@@ -718,7 +1058,64 @@ document.addEventListener("DOMContentLoaded", () => {
       const now = new Date();
       const pad = (n) => String(n).padStart(2, '0');
       const formattedDate = `${pad(now.getMonth() + 1)}/${pad(now.getDate())}/${String(now.getFullYear()).slice(-2)}`;
-      thermalMetaDate.textContent = `Date:${formattedDate}`;
+      thermalMetaDate.textContent = formattedDate;
+    }
+  }
+
+  function initGallery() {
+    const galleryScrollPanel = document.getElementById("gallery-scroll-panel");
+    if (!galleryScrollPanel) return;
+
+    galleryScrollPanel.innerHTML = ""; // clear empty state
+
+    // Create placeholder canvas
+    const placeholderCanvas = document.createElement("canvas");
+    placeholderCanvas.width = 320;
+    placeholderCanvas.height = 180;
+    const pCtx = placeholderCanvas.getContext("2d");
+    pCtx.fillStyle = "#05060f";
+    pCtx.fillRect(0, 0, 320, 180);
+    pCtx.strokeStyle = "rgba(0, 229, 255, 0.08)";
+    pCtx.lineWidth = 1;
+    // Draw crosshair lines
+    pCtx.beginPath();
+    pCtx.moveTo(160, 0); pCtx.lineTo(160, 180);
+    pCtx.moveTo(0, 90); pCtx.lineTo(320, 90);
+    pCtx.stroke();
+    // Subtle circle in center
+    pCtx.beginPath();
+    pCtx.arc(160, 90, 30, 0, 2 * Math.PI);
+    pCtx.stroke();
+    const placeholderDataUrl = placeholderCanvas.toDataURL();
+
+    for (let i = 0; i < 3; i++) {
+      const card = document.createElement("div");
+      card.className = "gallery-card";
+      card.id = `gallery-card-${i}`;
+      
+      const img = document.createElement("img");
+      img.src = placeholderDataUrl;
+      img.alt = `CAM-01 STANDBY`;
+      
+      const overlay = document.createElement("div");
+      overlay.className = "gallery-card-overlay";
+      
+      const topRow = document.createElement("div");
+      topRow.className = "gallery-card-top";
+      topRow.innerHTML = `<span>CAM-01</span><span class="gallery-card-frame">#-----</span>`;
+      
+      const bottomRow = document.createElement("div");
+      bottomRow.className = "gallery-card-bottom";
+      bottomRow.innerHTML = `<span>--:--:--</span><span style="color: rgba(255, 255, 255, 0.35);">STANDBY</span>`;
+      
+      overlay.appendChild(topRow);
+      overlay.appendChild(bottomRow);
+      
+      card.appendChild(img);
+      card.appendChild(overlay);
+      
+      galleryScrollPanel.appendChild(card);
+      galleryCards.push(card);
     }
   }
 
@@ -757,54 +1154,42 @@ document.addEventListener("DOMContentLoaded", () => {
     const vhsCapCounter = document.getElementById("vhs-cap-counter");
     if (vhsCapCounter) vhsCapCounter.textContent = String(captureCount).padStart(5, '0');
     
-
-
     const now = new Date();
     const timeStamp = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}`;
     const frameLabel = `#${String(captureCount).padStart(5,'0')}`;
 
-    // 3. Append static capture to the right side gallery scroll panel
+    // 3. Update circular gallery card (loop format)
     const galleryScrollPanel = document.getElementById("gallery-scroll-panel");
-    if (galleryScrollPanel) {
+    if (galleryScrollPanel && galleryCards.length === 3) {
       const imgDataUrl = riderCanvas.toDataURL("image/jpeg", 0.6);
+      const card = galleryCards[currentGalleryIndex];
       
-      const card = document.createElement("div");
-      card.className = "gallery-card";
-      
-      const img = document.createElement("img");
-      img.src = imgDataUrl;
-      img.alt = `Capture ${frameLabel}`;
-      
-      const overlay = document.createElement("div");
-      overlay.className = "gallery-card-overlay";
-      
-      const topRow = document.createElement("div");
-      topRow.className = "gallery-card-top";
-      topRow.innerHTML = `<span>CAM-01</span><span class="gallery-card-frame">${frameLabel}</span>`;
-      
-      const bottomRow = document.createElement("div");
-      bottomRow.className = "gallery-card-bottom";
-      bottomRow.innerHTML = `<span>${timeStamp}</span><span style="color: #00e5ff;">CAPTURED</span>`;
-      
-      overlay.appendChild(topRow);
-      overlay.appendChild(bottomRow);
-      
-      card.appendChild(img);
-      card.appendChild(overlay);
-      
-      // Remove empty state
-      const emptyState = galleryScrollPanel.querySelector(".gallery-empty-state");
-      if (emptyState) {
-        galleryScrollPanel.innerHTML = "";
+      // Update image
+      const img = card.querySelector("img");
+      if (img) {
+        img.src = imgDataUrl;
+        img.alt = `Capture ${frameLabel}`;
       }
       
-      // Insert at the top of the gallery
-      galleryScrollPanel.insertBefore(card, galleryScrollPanel.firstChild);
+      // Update text
+      const topRow = card.querySelector(".gallery-card-top");
+      if (topRow) {
+        topRow.innerHTML = `<span>CAM-01</span><span class="gallery-card-frame">${frameLabel}</span>`;
+      }
+      
+      const bottomRow = card.querySelector(".gallery-card-bottom");
+      if (bottomRow) {
+        bottomRow.innerHTML = `<span>${timeStamp}</span><span style="color: #00e5ff;">CAPTURED</span>`;
+      }
+      
+      // Trigger card update animation
+      card.classList.remove("just-updated");
+      void card.offsetWidth; // trigger reflow
+      card.classList.add("just-updated");
+      
+      // Increment index circularly
+      currentGalleryIndex = (currentGalleryIndex + 1) % 3;
     }
-
-
-
-
   }
 
   // --- 4. Mini Telemetry Trend Chart ---
@@ -1309,4 +1694,18 @@ document.addEventListener("DOMContentLoaded", () => {
     
     mainLoopId = requestAnimationFrame(mainRenderLoop);
   }
+
+  // --- Initialization ---
+  initFaceTracker();
+  setupWebcamCanvas();
+  initGallery();
+  updateFilterUI();
+  setupChartCanvas();
+  startClock();
+  updateSpeedGauge(currentSpeed);
+  pollPositionAPI();
+  
+  // Start Main Loop & Timers
+  mainLoopId = requestAnimationFrame(mainRenderLoop);
+  startSnapshotTimer();
 });
