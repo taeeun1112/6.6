@@ -67,22 +67,12 @@ const server = http.createServer((req, res) => {
           .btn:hover {
             background: #fff;
             color: #000;
-          }
-          .btn-sns {
-            border-color: #1877f2;
-            color: #1877f2;
-          }
-          .btn-sns:hover {
-            background: #1877f2;
-            color: #fff;
-          }
         </style>
       </head>
       <body>
-        <h1>Raduga Mobility Dual-Screen Control</h1>
+        <h1>Raduga Mobility Control</h1>
         <div class="btn-container">
-          <a class="btn" href="/산학 6번 데이터:홈페이지/index.html">Open Screen 6 (Thermal telemetry)</a>
-          <a class="btn btn-sns" href="/산학 7번 SNS/index.html">Open Screen 7 (Facebook SNS)</a>
+          <a class="btn" href="/산학 6번 데이터:홈페이지/index.html?autostart=true">Open Screen 6 (Thermal telemetry)</a>
         </div>
       </body>
       </html>
@@ -119,5 +109,4 @@ const server = http.createServer((req, res) => {
 server.listen(PORT, () => {
   console.log(`\x1b[32m[Raduga System] Local server launched at http://localhost:${PORT}\x1b[0m`);
   console.log(`- Screen 6 (Thermal Dashboard): http://localhost:${PORT}/산학%206번%20데이터:홈페이지/index.html`);
-  console.log(`- Screen 7 (SNS/Mosaic):        http://localhost:${PORT}/산학%207번%20SNS/index.html`);
 });

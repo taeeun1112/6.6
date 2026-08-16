@@ -1661,17 +1661,6 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // Open Screen 7 Event Listener
-  const btnOpenSns = document.getElementById("btn-open-sns");
-  if (btnOpenSns) {
-    btnOpenSns.addEventListener("click", () => {
-      playHapticTap(1100, 0.04, 0.02);
-      const child = window.open("../산학 7번 SNS/index.html", "Screen7");
-      if (child) {
-        childWindows.push(child);
-      }
-    });
-  }
 
   function mainRenderLoop(timestamp) {
     simulateTelemetry();
@@ -1708,4 +1697,17 @@ document.addEventListener("DOMContentLoaded", () => {
   // Start Main Loop & Timers
   mainLoopId = requestAnimationFrame(mainRenderLoop);
   startSnapshotTimer();
+
+  // --- Auto-start Webcam in Server/TouchDesigner Context ---
+  const urlParams = new URLSearchParams(window.location.search);
+  const autoStart = urlParams.get('autostart') === 'true' || urlParams.get('td') === 'true';
+  const isServer = window.location.protocol !== "file:";
+  
+  // If ?autostart=true is set, or if running on local server, try to start the camera automatically
+  if ((autoStart || isServer) && window.location.protocol !== "file:") {
+    setTimeout(() => {
+      console.log("[Raduga Telemetry] Attempting to auto-start webcam for TouchDesigner/Web integration...");
+      startWebcam();
+    }, 800);
+  }
 });
