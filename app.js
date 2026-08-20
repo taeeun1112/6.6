@@ -710,10 +710,12 @@ document.addEventListener("DOMContentLoaded", () => {
     const w = riderCanvas.width;
     const h = riderCanvas.height;
 
+    const isVideoReady = (videoFeed && videoFeed.srcObject && (videoFeed.videoWidth > 0 || videoFeed.readyState >= 2));
+
     // Share raw webcam frame to Screen 7 (Receiver) only when child windows are active
-    if (cameraActive && videoFeed.srcObject && (videoFeed.readyState >= 2 || videoFeed.videoWidth > 0)) {
+    if (isVideoReady && childWindows.length > 0) {
       const now = performance.now();
-      if (childWindows.length > 0 && (now - lastShareTime > 100)) { // limit sharing to active sub-windows at 10 FPS
+      if (now - lastShareTime > 100) { // limit sharing to active sub-windows at 10 FPS
         lastShareTime = now;
         sharingCtx.drawImage(videoFeed, 0, 0, 640, 360);
         sharingCanvas.toBlob((blob) => {
@@ -739,7 +741,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const speedRatio = Math.min(1.0, currentSpeed / 130);
       const speedHeatFactor = Math.pow(speedRatio, 0.75); // Speed heat boost curve
 
-      if (cameraActive && videoFeed.srcObject && (videoFeed.readyState >= 2 || videoFeed.videoWidth > 0)) {
+      if (isVideoReady) {
         // Draw current webcam frame to offscreen canvas
         thermalCtx.drawImage(videoFeed, 0, 0, tw, th);
         const imgData = thermalCtx.getImageData(0, 0, tw, th);
@@ -768,6 +770,8 @@ document.addEventListener("DOMContentLoaded", () => {
           bodyRx = fw * 2.0;
           bodyRy = fh * 2.5;
         }
+
+        let userSumX = 0, userSumY = 0, userWeightSum = 0;
 
         // Process each pixel: Motion Detection + Face/Body Zone + Skin Chrominance + Speed Heat Variation
         for (let y = 0; y < th; y++) {
@@ -863,15 +867,36 @@ document.addEventListener("DOMContentLoaded", () => {
 
         thermalCtx.putImageData(imgData, 0, 0);
 
+        // Draw back to main canvas with retro pixelated stretching
+        riderCtx.imageSmoothingEnabled = false;
+        riderCtx.drawImage(thermalCanvas, 0, 0, w, h);
       } else {
-        // Ambient background when camera is STANDBY / OFF (Clean dark screen)
-        thermalCtx.fillStyle = "rgb(4, 6, 18)";
-        thermalCtx.fillRect(0, 0, tw, th);
-      }
+        // Draw clean Standby UI with click-to-connect button prompt
+        riderCtx.fillStyle = "#040612";
+        riderCtx.fillRect(0, 0, w, h);
 
-      // Draw back to main canvas with retro pixelated stretching
-      riderCtx.imageSmoothingEnabled = false;
-      riderCtx.drawImage(thermalCanvas, 0, 0, w, h);
+        const cx = w / 2;
+        const cy = h / 2;
+
+        // Camera Icon & Button Prompt
+        riderCtx.fillStyle = "rgba(0, 229, 255, 0.15)";
+        riderCtx.beginPath();
+        riderCtx.arc(cx, cy - 15, 36, 0, 2 * Math.PI);
+        riderCtx.fill();
+
+        riderCtx.strokeStyle = "#00e5ff";
+        riderCtx.lineWidth = 2;
+        riderCtx.stroke();
+
+        riderCtx.fillStyle = "#ffffff";
+        riderCtx.font = "600 15px 'Inter', -apple-system, sans-serif";
+        riderCtx.textAlign = "center";
+        riderCtx.fillText("📷 CLICK HERE TO START CAMERA", cx, cy + 40);
+
+        riderCtx.fillStyle = "rgba(0, 229, 255, 0.7)";
+        riderCtx.font = "13px 'Inter', -apple-system, sans-serif";
+        riderCtx.fillText("화면을 클릭하면 웹캠 카메라가 연동됩니다", cx, cy + 64);
+      }
 
       // Update dynamic HUD overlays
       updateThermalOverlayTracker();
@@ -885,31 +910,11 @@ document.addEventListener("DOMContentLoaded", () => {
         riderCtx.filter = "contrast(1.12) brightness(1.05)";
       }
 
-      if (cameraActive && videoFeed.srcObject && (videoFeed.readyState >= 2 || videoFeed.videoWidth > 0)) {
+      if (isVideoReady) {
         riderCtx.imageSmoothingEnabled = true;
         riderCtx.drawImage(videoFeed, 0, 0, w, h);
       } else {
         // MODERN VECTOR RADAR FALLBACK (Apple style light-grey minimalist circles)
-        riderCtx.fillStyle = "#121214";
-        riderCtx.fillRect(0, 0, w, h);
-        
-        const cx = w / 2;
-        const cy = h / 2;
-        const radius = 90;
-        
-        riderCtx.strokeStyle = "rgba(255, 255, 255, 0.05)";
-        riderCtx.lineWidth = 1;
-        
-        // Multi scope circle bounds
-        for (let r = 1; r <= 3; r++) {
-          riderCtx.beginPath();
-          riderCtx.arc(cx, cy, radius * (r / 3), 0, 2 * Math.PI);
-          riderCtx.stroke();
-        }
-        
-        // Sweep radar line
-        const sweepAngle = (animationTime * 0.9) % (2 * Math.PI);
-        riderCtx.strokeStyle = "rgba(255, 255, 255, 0.15)";
         riderCtx.beginPath();
         riderCtx.moveTo(cx, cy);
         riderCtx.lineTo(cx + Math.cos(sweepAngle) * radius, cy + Math.sin(sweepAngle) * radius);
