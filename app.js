@@ -39,7 +39,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const riderCtx = riderCanvas.getContext("2d", { willReadFrequently: true });
   
   const chartCanvas = document.getElementById("speed-chart");
-  const chartCtx = chartCanvas.getContext("2d");
+  const chartCtx = chartCanvas ? chartCanvas.getContext("2d") : null;
 
   // --- State Variables ---
   let currentSpeed = 45; // km/h
@@ -437,8 +437,8 @@ document.addEventListener("DOMContentLoaded", () => {
     gpsCoords.y += currentSpeed * Math.sin(rad) * dt;
 
     // Update GPS DOM text
-    coordsLatLng.textContent = `${gpsCoords.lat.toFixed(5)}° N / ${gpsCoords.lng.toFixed(5)}° E`;
-    coordsHead.textContent = `${gpsCoords.heading.toFixed(1)}° (${getCompassDirection(gpsCoords.heading)})`;
+    if (coordsLatLng) coordsLatLng.textContent = `${gpsCoords.lat.toFixed(5)}° N / ${gpsCoords.lng.toFixed(5)}° E`;
+    if (coordsHead) coordsHead.textContent = `${gpsCoords.heading.toFixed(1)}° (${getCompassDirection(gpsCoords.heading)})`;
   }
 
   function getCompassDirection(deg) {
@@ -572,7 +572,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   async function startWebcam() {
-    btnCameraPower.textContent = "Connecting...";
+    if (btnCameraPower) btnCameraPower.textContent = "Connecting...";
     try {
       const stream = await requestUserCameraStream();
       videoFeed.srcObject = stream;
@@ -596,8 +596,10 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
       cameraActive = true;
-      btnCameraPower.textContent = "Stop Camera";
-      btnCameraPower.classList.add("active");
+      if (btnCameraPower) {
+        btnCameraPower.textContent = "Stop Camera";
+        btnCameraPower.classList.add("active");
+      }
       gpsStatusBadge.textContent = "GPS LOCKED & STREAMING";
       gpsStatusBadge.classList.add("active");
 
@@ -622,8 +624,10 @@ document.addEventListener("DOMContentLoaded", () => {
     } catch (err) {
       console.error("Camera access failed:", err);
       cameraActive = false;
-      btnCameraPower.textContent = "Start Camera";
-      btnCameraPower.classList.remove("active");
+      if (btnCameraPower) {
+        btnCameraPower.textContent = "Start Camera";
+        btnCameraPower.classList.remove("active");
+      }
 
       if (err.message === "MEDIA_DEVICES_UNSUPPORTED" || (window.location.protocol === "file:")) {
         showToast(
@@ -670,8 +674,10 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     videoFeed.srcObject = null;
     cameraActive = false;
-    btnCameraPower.textContent = "Start Camera";
-    btnCameraPower.classList.remove("active");
+    if (btnCameraPower) {
+      btnCameraPower.textContent = "Start Camera";
+      btnCameraPower.classList.remove("active");
+    }
     gpsStatusBadge.textContent = "GPS LOCKED";
     gpsStatusBadge.classList.remove("active");
 
@@ -683,43 +689,49 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  btnCameraPower.addEventListener("click", () => {
-    playHapticTap(1200, 0.04, 0.02);
-    if (!cameraActive) {
-      startWebcam();
-    } else {
-      stopWebcam();
-    }
-  });
+  if (btnCameraPower) {
+    btnCameraPower.addEventListener("click", () => {
+      playHapticTap(1200, 0.04, 0.02);
+      if (!cameraActive) {
+        startWebcam();
+      } else {
+        stopWebcam();
+      }
+    });
+  }
 
-  btnFilterCycle.addEventListener("click", () => {
-    playHapticTap(1000, 0.03, 0.015);
-    if (activeFilter === "THERMAL") {
-      activeFilter = "CINEMATIC";
-      btnFilterCycle.textContent = "Filter: Cinematic";
-    } else if (activeFilter === "CINEMATIC") {
-      activeFilter = "GRAYSCALE";
-      btnFilterCycle.textContent = "Filter: Mono Grayscale";
-    } else if (activeFilter === "GRAYSCALE") {
-      activeFilter = "STANDARD";
-      btnFilterCycle.textContent = "Filter: Clean Raw";
-    } else {
-      activeFilter = "THERMAL";
-      btnFilterCycle.textContent = "Filter: Thermal";
-    }
-    updateFilterUI();
-  });
+  if (btnFilterCycle) {
+    btnFilterCycle.addEventListener("click", () => {
+      playHapticTap(1000, 0.03, 0.015);
+      if (activeFilter === "THERMAL") {
+        activeFilter = "CINEMATIC";
+        btnFilterCycle.textContent = "Filter: Cinematic";
+      } else if (activeFilter === "CINEMATIC") {
+        activeFilter = "GRAYSCALE";
+        btnFilterCycle.textContent = "Filter: Mono Grayscale";
+      } else if (activeFilter === "GRAYSCALE") {
+        activeFilter = "STANDARD";
+        btnFilterCycle.textContent = "Filter: Clean Raw";
+      } else {
+        activeFilter = "THERMAL";
+        btnFilterCycle.textContent = "Filter: Thermal";
+      }
+      updateFilterUI();
+    });
+  }
 
-  btnAutoPilot.addEventListener("click", () => {
-    playHapticTap(1100, 0.04, 0.02);
-    autoDriveActive = !autoDriveActive;
-    btnAutoPilot.classList.toggle("active", autoDriveActive);
-    if (autoDriveActive) {
-      addEventLog("AUTO CRUISE CONTROL ENGAGED");
-    } else {
-      addEventLog("AUTO CRUISE COMPLETED");
-    }
-  });
+  if (btnAutoPilot) {
+    btnAutoPilot.addEventListener("click", () => {
+      playHapticTap(1100, 0.04, 0.02);
+      autoDriveActive = !autoDriveActive;
+      btnAutoPilot.classList.toggle("active", autoDriveActive);
+      if (autoDriveActive) {
+        addEventLog("AUTO CRUISE CONTROL ENGAGED");
+      } else {
+        addEventLog("AUTO CRUISE COMPLETED");
+      }
+    });
+  }
 
   function processWebcamFeed() {
     const w = riderCanvas.width;
@@ -1194,17 +1206,22 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // --- 4. Mini Telemetry Trend Chart ---
   function setupChartCanvas() {
+    if (!chartCanvas) return;
     resizeChartCanvas();
     window.addEventListener("resize", resizeChartCanvas);
   }
 
   function resizeChartCanvas() {
+    if (!chartCanvas) return;
     const parent = chartCanvas.parentElement;
-    chartCanvas.width = parent.clientWidth;
-    chartCanvas.height = parent.clientHeight;
+    if (parent) {
+      chartCanvas.width = parent.clientWidth;
+      chartCanvas.height = parent.clientHeight;
+    }
   }
 
   function drawTelemetryChart() {
+    if (!chartCanvas || !chartCtx) return;
     const w = chartCanvas.width;
     const h = chartCanvas.height;
     

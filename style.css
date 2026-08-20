@@ -147,10 +147,10 @@ body {
   flex-grow: 1;
   display: flex;
   flex-direction: column;
-  padding: 8px 24px 12px 24px;
-  gap: 12px;
+  padding: 6px 20px 8px 20px;
+  gap: 8px;
   width: 100%;
-  max-width: 1600px;
+  max-width: 1800px;
   height: calc(100vh - 52px);
   margin: 0 auto;
   overflow: hidden;
@@ -164,7 +164,7 @@ body {
   display: grid;
   grid-template-columns: 68% 1fr;
   grid-template-rows: 1fr auto;
-  gap: 12px 16px;
+  gap: 8px 14px;
   flex: 1;
   min-height: 0;
 }
@@ -189,10 +189,10 @@ body {
   grid-column: 1;
   grid-row: 2;
   background-color: #020203;
-  border-radius: 18px; /* 14px -> 18px to match telemetry */
-  border: 1px solid rgba(0, 229, 255, 0.15); /* matching telemetry cyan */
+  border-radius: 12px;
+  border: 1px solid rgba(0, 229, 255, 0.15);
   box-shadow: inset 0 0 15px rgba(0, 229, 255, 0.05);
-  padding: 10px 20px;
+  padding: 6px 16px;
   display: flex;
   align-items: center;
   position: relative;
@@ -961,12 +961,13 @@ body {
 .control-deck {
   width: 100%;
   background-color: var(--bg-card);
-  border-radius: 18px;
+  border-radius: 14px;
   border: 1px solid var(--border-light);
-  padding: 10px 24px;
+  padding: 6px 18px;
   display: flex;
-  flex-direction: column;
-  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 48px;
   flex-shrink: 0;
   box-shadow: 0 10px 30px rgba(0,0,0,0.35);
 }
@@ -975,12 +976,13 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 30px;
+  gap: 16px;
+  width: 100%;
 }
 
 .deck-row.border-top {
-  border-top: 1px solid var(--border-light);
-  padding-top: 10px;
+  border-top: none;
+  padding-top: 0;
 }
 
 /* Slider Design */
@@ -1029,8 +1031,8 @@ body {
 .speed-slider-below .minimal-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
   background-color: #ff3b30;
   border: 2px solid #00e5ff;
   border-radius: 50%;
@@ -1052,7 +1054,7 @@ body {
 /* Coordinates column details */
 .coord-display {
   display: flex;
-  gap: 24px;
+  gap: 16px;
   flex-shrink: 0;
 }
 
@@ -1062,14 +1064,14 @@ body {
 }
 
 .coord-col .lbl {
-  font-size: 9px;
+  font-size: 8.5px;
   font-weight: 700;
   color: var(--text-gray);
   letter-spacing: 0.5px;
 }
 
 .coord-col .val {
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 500;
   color: var(--text-white);
 }
@@ -1077,25 +1079,27 @@ body {
 /* Apple Button panel controls */
 .action-buttons {
   display: flex;
-  gap: 12px;
+  align-items: center;
+  gap: 8px;
 }
 
 .deck-btn {
   background-color: transparent;
   border: 1px solid var(--text-dark-gray);
   color: var(--text-white);
-  padding: 10px 22px;
+  padding: 6px 16px;
   border-radius: 99px;
   font-family: var(--font-sans);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
   cursor: pointer;
   outline: none;
+  white-space: nowrap;
   transition: all var(--transition-fast);
 }
 
 .deck-btn:hover {
-  background-color: rgba(255, 255, 255, 0.05);
+  background-color: rgba(255, 255, 255, 0.08);
   border-color: var(--text-gray);
 }
 
@@ -1123,8 +1127,8 @@ body {
 
 /* Speed chart panel mini */
 .chart-mini-group {
-  width: 140px;
-  height: 32px;
+  width: 120px;
+  height: 28px;
   flex-shrink: 0;
 }
 
@@ -1760,9 +1764,9 @@ body {
    ========================================================================== */
 .camera-sub-deck {
   position: relative;
-  height: 98px;
+  height: 78px;
   background-color: #020203;
-  border-radius: 18px;
+  border-radius: 12px;
   border: 1px solid rgba(0, 229, 255, 0.15);
   box-shadow: inset 0 0 15px rgba(0, 229, 255, 0.05);
   overflow: hidden;
@@ -1931,6 +1935,34 @@ body {
   from { transform: translateY(-100%); }
   to { transform: translateY(0); }
 }
+
+/* ==========================================================================
+   32-INCH WIDESCREEN MONITOR OPTIMIZATION
+   ========================================================================== */
+@media (min-width: 1400px) and (min-height: 720px) {
+  .viewport-container {
+    max-width: 96vw;
+    padding: 8px 24px 10px 24px;
+    gap: 10px;
+  }
+  .dual-screen-row {
+    grid-template-columns: 70% 1fr;
+    gap: 10px 16px;
+  }
+  .media-card {
+    flex: 1;
+    min-height: 380px;
+  }
+  .control-deck {
+    padding: 8px 24px;
+    min-height: 48px;
+  }
+  .deck-btn {
+    padding: 7px 18px;
+    font-size: 12.5px;
+  }
+}
+
 
 
 
