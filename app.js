@@ -558,6 +558,12 @@ document.addEventListener("DOMContentLoaded", () => {
     if (btnCameraPower) btnCameraPower.textContent = "Connecting...";
     try {
       const stream = await requestUserCameraStream();
+      videoFeed.muted = true;
+      videoFeed.defaultMuted = true;
+      videoFeed.playsInline = true;
+      videoFeed.setAttribute("muted", "");
+      videoFeed.setAttribute("playsinline", "");
+      videoFeed.setAttribute("autoplay", "");
       videoFeed.srcObject = stream;
 
       try {
@@ -584,8 +590,8 @@ document.addEventListener("DOMContentLoaded", () => {
         };
       });
 
-      // Start face tracking
-      if (faceTracker && !trackerTask) {
+      // Start face tracking if library is loaded safely
+      if (typeof tracking !== "undefined" && faceTracker && !trackerTask) {
         try {
           trackerTask = tracking.track('#webcam-feed', faceTracker);
         } catch (tErr) {
@@ -710,7 +716,13 @@ document.addEventListener("DOMContentLoaded", () => {
     const w = riderCanvas.width;
     const h = riderCanvas.height;
 
-    const isVideoReady = (videoFeed && videoFeed.srcObject && (videoFeed.videoWidth > 0 || videoFeed.readyState >= 2));
+    const hasStream = (videoFeed && videoFeed.srcObject && videoFeed.srcObject.active);
+    const isVideoReady = hasStream && (videoFeed.videoWidth > 0 || videoFeed.readyState >= 1 || cameraActive);
+
+    // Auto-recover video playback if paused
+    if (hasStream && videoFeed.paused) {
+      videoFeed.play().catch(() => {});
+    }
 
     // Share raw webcam frame to Screen 7 (Receiver) only when child windows are active
     if (isVideoReady && childWindows.length > 0) {
