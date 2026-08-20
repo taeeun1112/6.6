@@ -988,21 +988,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
       // Draw high-definition natural camera feed first (photo-friendly, clear face & eyes)
       if (cameraActive && videoFeed.srcObject && videoFeed.readyState === videoFeed.HAVE_ENOUGH_DATA) {
-        riderCtx.filter = "contrast(1.12) brightness(1.02) saturate(1.15)";
+        riderCtx.filter = "contrast(1.08) brightness(1.04) saturate(1.1)";
         riderCtx.imageSmoothingEnabled = true;
         riderCtx.drawImage(videoFeed, 0, 0, w, h);
         riderCtx.filter = "none";
 
-        // Pass 1: Rich FLIR Thermal Ironbow Heatmap (Screen blend mode at 0.75 opacity)
+        // Layer glowing Thermal Sci-Fi Ironbow Heatmap on top
         riderCtx.globalCompositeOperation = "screen";
-        riderCtx.globalAlpha = 0.75;
+        riderCtx.globalAlpha = 0.55;
         riderCtx.drawImage(thermalCanvas, 0, 0, w, h);
-
-        // Pass 2: FLIR Thermographic Edge & Texture Contrast (Overlay blend mode at 0.25 opacity)
-        riderCtx.globalCompositeOperation = "overlay";
-        riderCtx.globalAlpha = 0.25;
-        riderCtx.drawImage(thermalCanvas, 0, 0, w, h);
-
         riderCtx.globalCompositeOperation = "source-over";
         riderCtx.globalAlpha = 1.0;
       } else {
