@@ -226,6 +226,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // --- Face Tracker & Human Detection Initialization ---
   let lastFaceDetectedTime = 0;
   let smoothFace = { x: 0, y: 0, width: 0, height: 0, active: false };
+  let detectedUserCenter = { x: 50, y: 40, active: false };
 
   function initFaceTracker() {
     if (typeof tracking !== "undefined") {
@@ -807,6 +808,8 @@ document.addEventListener("DOMContentLoaded", () => {
         const defaultBodyRx = defaultHeadR * 1.4;
         const defaultBodyRy = defaultHeadR * 1.6;
 
+        let userSumX = 0, userSumY = 0, userWeightSum = 0;
+
         // Process each pixel: Motion Detection + Human Spatial Zone + Accurate Skin Chrominance + Speed Heat Variation
         for (let y = 0; y < th; y++) {
           for (let x = 0; x < tw; x++) {
@@ -871,6 +874,13 @@ document.addEventListener("DOMContentLoaded", () => {
             // 5. Subject Activity Weight (0.0 = Background, 1.0 = Active Human Subject)
             const activity = Math.min(1.0, humanZoneVal * 0.9 + skinVal * 0.6 + motionVal * 1.2);
 
+            // Accumulate weighted human position for real-time tracking fallback
+            if (activity > 0.25) {
+              userSumX += x * activity;
+              userSumY += y * activity;
+              userWeightSum += activity;
+            }
+
             // 6. Dynamic Thermal Temperature Mapping:
             const normLum = lum / 255;
             
@@ -882,9 +892,6 @@ document.addEventListener("DOMContentLoaded", () => {
             const baseHumanWarmth = activity * (35 + normLum * 30);
 
             // Dynamic Temperature Boost from Speed Slider:
-            // 0 km/h -> 0 heat boost (Cool Teal/Violet)
-            // 45 km/h -> +60 heat boost (Warm Amber/Red)
-            // 100+ km/h -> +135 heat boost (Fiery Flame Red / Blaze Orange / White-Hot Core)
             const speedHeatBoost = activity * (speedHeatFactor * 135);
 
             let finalThermal = ambientBg + baseHumanWarmth + speedHeatBoost;
@@ -901,6 +908,14 @@ document.addEventListener("DOMContentLoaded", () => {
             pixels[pIdx + 1] = thermalLUT[lutIdx * 3 + 1];
             pixels[pIdx + 2] = thermalLUT[lutIdx * 3 + 2];
           }
+        }
+
+        if (userWeightSum > 5) {
+          detectedUserCenter.x = (userSumX / userWeightSum / tw) * 100;
+          detectedUserCenter.y = (userSumY / userWeightSum / th) * 100;
+          detectedUserCenter.active = true;
+        } else {
+          detectedUserCenter.active = false;
         }
 
         thermalCtx.putImageData(imgData, 0, 0);
@@ -1059,23 +1074,26 @@ document.addEventListener("DOMContentLoaded", () => {
     // 2. Position tracking coordinates (using actual webcam face detection or fallback telemetry)
     let targetBoxX, targetBoxY;
     if (cameraActive && smoothFace.active && smoothFace.width > 0) {
-      const vw = videoFeed.videoWidth || 1280;
-      const vh = videoFeed.videoHeight || 720;
+      const vw = videoFeed.videoWidth || videoFeed.clientWidth || 1280;
+      const vh = videoFeed.videoHeight || videoFeed.clientHeight || 720;
       const cx = smoothFace.x + smoothFace.width / 2;
       const cy = smoothFace.y + smoothFace.height / 2;
       
       // Convert pixel center coordinates to percentages of video size
       targetBoxX = (cx / vw) * 100;
       targetBoxY = (cy / vh) * 100;
+    } else if (cameraActive && detectedUserCenter.active) {
+      // Use real-time skin/motion center of mass
+      targetBoxX = detectedUserCenter.x;
+      targetBoxY = detectedUserCenter.y;
     } else {
-      // Fallback: use simulated movement coordinates with ping-pong boundaries
-      targetBoxX = pingPong(gpsCoords.x * 0.2, 15, 85);
-      targetBoxY = pingPong(gpsCoords.y * 0.2, 15, 75);
+      targetBoxX = 50;
+      targetBoxY = 40;
     }
     
-    // Apply interpolation/easing to make target tracking box move smoothly
-    currentBoxX = lerp(currentBoxX, targetBoxX, 0.08);
-    currentBoxY = lerp(currentBoxY, targetBoxY, 0.08);
+    // Apply fast interpolation/easing to make target tracking box follow person in real time
+    currentBoxX = lerp(currentBoxX, targetBoxX, 0.25);
+    currentBoxY = lerp(currentBoxY, targetBoxY, 0.25);
     
     if (thermalFaceBox) {
       thermalFaceBox.style.left = `${currentBoxX}%`;
