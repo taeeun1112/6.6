@@ -797,18 +797,7 @@ document.addEventListener("DOMContentLoaded", () => {
           bodyRy = fh * 2.5;
         }
 
-        // Center fallback prior for desk user in front of camera (subtle localized weight)
-        const defaultHeadCx = tw * 0.5;
-        const defaultHeadCy = th * 0.45;
-        const defaultHeadR = Math.min(tw, th) * 0.25;
-        const defaultBodyCx = defaultHeadCx;
-        const defaultBodyCy = defaultHeadCy + defaultHeadR * 1.3;
-        const defaultBodyRx = defaultHeadR * 1.4;
-        const defaultBodyRy = defaultHeadR * 1.6;
-
-        let userSumX = 0, userSumY = 0, userWeightSum = 0;
-
-        // Process each pixel: Motion Detection + Human Spatial Zone + Accurate Skin Chrominance + Speed Heat Variation
+        // Process each pixel: Motion Detection + Face/Body Zone + Skin Chrominance + Speed Heat Variation
         for (let y = 0; y < th; y++) {
           for (let x = 0; x < tw; x++) {
             const idx = y * tw + x;
@@ -832,7 +821,7 @@ document.addEventListener("DOMContentLoaded", () => {
             }
             const motionVal = motionHeatMap[idx];
 
-            // 3. Human Spatial Heat Zone (Detected Face/Body OR Localized Center Fallback)
+            // 3. Human Spatial Heat Zone (Detected Face/Body)
             let humanZoneVal = 0;
             if (hasFace) {
               const dxH = (x - headCx) / headR;
@@ -848,24 +837,9 @@ document.addEventListener("DOMContentLoaded", () => {
               if (distBody < 1.5) {
                 humanZoneVal = Math.max(humanZoneVal, 0.85 - distBody / 1.5);
               }
-            } else {
-              // Gentle localized center prior when face tracking is scanning
-              const dxH = (x - defaultHeadCx) / defaultHeadR;
-              const dyH = (y - defaultHeadCy) / defaultHeadR;
-              const distHead = dxH * dxH + dyH * dyH;
-              if (distHead < 1.2) {
-                humanZoneVal = Math.max(humanZoneVal, 0.35 * (1.0 - distHead / 1.2));
-              }
-
-              const dxB = (x - defaultBodyCx) / defaultBodyRx;
-              const dyB = (y - defaultBodyCy) / defaultBodyRy;
-              const distBody = dxB * dxB + dyB * dyB;
-              if (distBody < 1.4) {
-                humanZoneVal = Math.max(humanZoneVal, 0.25 * (1.0 - distBody / 1.4));
-              }
             }
 
-            // 4. Accurate Skin Chrominance Heuristic (prevents background room from triggering)
+            // 4. Accurate Skin Chrominance Heuristic
             const isSkin = (r > 80 && g > 50 && b > 35 && r > g && g > b && (r - g) > 12 && (r - b) > 18);
             const skinVal = isSkin ? 0.65 : 0;
 
@@ -879,14 +853,13 @@ document.addEventListener("DOMContentLoaded", () => {
               userWeightSum += activity;
             }
 
-            // 6. Dynamic Thermal Temperature Mapping:
+            // 6. Dynamic Thermal Temperature Mapping (Purely based on real camera pixel luminance + speed)
             const normLum = lum / 255;
             
             // Background is ALWAYS Cool Navy Blue / Deep Teal (LUT index 15 ~ 48)
             const ambientBg = 15 + normLum * 33;
             
             // Human subject base warmth at 0 km/h: Cool Teal / Indigo Violet (LUT index +35 ~ +65)
-            // Ensures human figure is clearly visible against navy background without being red at 0 speed!
             const baseHumanWarmth = activity * (35 + normLum * 30);
 
             // Dynamic Temperature Boost from Speed Slider:
@@ -919,72 +892,9 @@ document.addEventListener("DOMContentLoaded", () => {
         thermalCtx.putImageData(imgData, 0, 0);
 
       } else {
-        // --- Simulated Fallback Scene (When Camera is OFF) ---
-        // Ambient background (Cold Blue)
-        thermalCtx.fillStyle = "rgb(6, 8, 22)";
+        // Ambient background when camera is STANDBY / OFF (Clean dark screen)
+        thermalCtx.fillStyle = "rgb(4, 6, 18)";
         thermalCtx.fillRect(0, 0, tw, th);
-
-        // Faint background structures (Cold dark navy)
-        thermalCtx.fillStyle = "rgb(15, 20, 45)";
-        thermalCtx.fillRect(40, 30, 80, 70);
-        thermalCtx.fillRect(200, 40, 70, 80);
-
-        patrolX = (currentBoxX / 100) * tw;
-        patrolY = (currentBoxY / 100) * th;
-
-        const effectiveHeatMultiplier = thermalHeatMultiplier + (currentResistance / 100) * 0.4;
-        const headRadius = 20 + speedHeatFactor * 12 * effectiveHeatMultiplier;
-        const torsoWidth = 44 + speedHeatFactor * 18 * effectiveHeatMultiplier;
-        const torsoHeight = 38 + speedHeatFactor * 10 * effectiveHeatMultiplier;
-
-        // Subject intensities: Cold when stopped (lum ~ 50), very hot red/bright when speed is high (lum ~ 180-245)
-        const baseCold = 45;
-        const torsoIntensity = Math.min(255, Math.round(baseCold + speedHeatFactor * 160 * effectiveHeatMultiplier));
-        const headIntensity = Math.min(255, Math.round(baseCold + speedHeatFactor * 185 * effectiveHeatMultiplier));
-        const faceIntensity = Math.min(255, Math.round(baseCold + speedHeatFactor * 195 * effectiveHeatMultiplier));
-        const eyeIntensity = Math.min(255, Math.round(baseCold + speedHeatFactor * 205 * effectiveHeatMultiplier));
-
-        thermalCtx.filter = "blur(7px)";
-
-        // Torso
-        thermalCtx.fillStyle = `rgb(${torsoIntensity}, ${torsoIntensity}, ${torsoIntensity})`;
-        thermalCtx.beginPath();
-        thermalCtx.ellipse(patrolX, patrolY + 55, torsoWidth, torsoHeight, 0, 0, 2 * Math.PI);
-        thermalCtx.fill();
-
-        // Head
-        thermalCtx.fillStyle = `rgb(${headIntensity}, ${headIntensity}, ${headIntensity})`;
-        thermalCtx.beginPath();
-        thermalCtx.arc(patrolX, patrolY, headRadius, 0, 2 * Math.PI);
-        thermalCtx.fill();
-
-        // Face core
-        thermalCtx.fillStyle = `rgb(${faceIntensity}, ${faceIntensity}, ${faceIntensity})`;
-        thermalCtx.beginPath();
-        thermalCtx.ellipse(patrolX, patrolY, headRadius * 0.55, headRadius * 0.7, 0, 0, 2 * Math.PI);
-        thermalCtx.fill();
-
-        // Eyes & nose
-        thermalCtx.fillStyle = `rgb(${eyeIntensity}, ${eyeIntensity}, ${eyeIntensity})`;
-        thermalCtx.beginPath();
-        thermalCtx.arc(patrolX - (headRadius * 0.25), patrolY - (headRadius * 0.15), headRadius * 0.15, 0, 2 * Math.PI);
-        thermalCtx.arc(patrolX + (headRadius * 0.25), patrolY - (headRadius * 0.15), headRadius * 0.15, 0, 2 * Math.PI);
-        thermalCtx.arc(patrolX, patrolY + (headRadius * 0.1), headRadius * 0.1, 0, 2 * Math.PI);
-        thermalCtx.fill();
-
-        thermalCtx.filter = "none";
-
-        // Map simulated scene through thermal LUT
-        const simImg = thermalCtx.getImageData(0, 0, tw, th);
-        const simPixels = simImg.data;
-        for (let i = 0; i < simPixels.length; i += 4) {
-          const lum = simPixels[i];
-          const lutIdx = Math.max(0, Math.min(255, lum));
-          simPixels[i] = thermalLUT[lutIdx * 3];
-          simPixels[i + 1] = thermalLUT[lutIdx * 3 + 1];
-          simPixels[i + 2] = thermalLUT[lutIdx * 3 + 2];
-        }
-        thermalCtx.putImageData(simImg, 0, 0);
       }
 
       // Draw back to main canvas with retro pixelated stretching
