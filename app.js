@@ -798,16 +798,16 @@ document.addEventListener("DOMContentLoaded", () => {
           bodyRy = fh * 2.5;
         }
 
-        // Center fallback prior for desk user in front of camera
+        // Center fallback prior for desk user in front of camera (subtle localized weight)
         const defaultHeadCx = tw * 0.5;
-        const defaultHeadCy = th * 0.42;
-        const defaultHeadR = Math.min(tw, th) * 0.32;
+        const defaultHeadCy = th * 0.45;
+        const defaultHeadR = Math.min(tw, th) * 0.25;
         const defaultBodyCx = defaultHeadCx;
-        const defaultBodyCy = defaultHeadCy + defaultHeadR * 1.4;
-        const defaultBodyRx = defaultHeadR * 1.8;
-        const defaultBodyRy = defaultHeadR * 2.2;
+        const defaultBodyCy = defaultHeadCy + defaultHeadR * 1.3;
+        const defaultBodyRx = defaultHeadR * 1.4;
+        const defaultBodyRy = defaultHeadR * 1.6;
 
-        // Process each pixel: Motion Detection + Human Spatial Zone + Skin Chrominance + High Thermal Contrast
+        // Process each pixel: Motion Detection + Human Spatial Zone + Accurate Skin Chrominance + Speed Heat Variation
         for (let y = 0; y < th; y++) {
           for (let x = 0; x < tw; x++) {
             const idx = y * tw + x;
@@ -824,68 +824,73 @@ document.addEventListener("DOMContentLoaded", () => {
             const diff = Math.abs(lum - prevLum);
             prevLumaBuffer[idx] = lum;
 
-            if (diff > 5) {
+            if (diff > 6) {
               motionHeatMap[idx] = Math.min(1.0, motionHeatMap[idx] + diff * 0.08);
             } else {
-              motionHeatMap[idx] *= 0.90; // Smooth heat trail decay
+              motionHeatMap[idx] *= 0.88; // Smooth heat trail decay
             }
             const motionVal = motionHeatMap[idx];
 
-            // 3. Human Spatial Heat Zone (Detected Face/Body OR Center User Fallback)
+            // 3. Human Spatial Heat Zone (Detected Face/Body OR Localized Center Fallback)
             let humanZoneVal = 0;
             if (hasFace) {
               const dxH = (x - headCx) / headR;
               const dyH = (y - headCy) / headR;
               const distHead = dxH * dxH + dyH * dyH;
-              if (distHead < 1.8) {
-                humanZoneVal = Math.max(humanZoneVal, Math.max(0, 1.0 - distHead / 1.8));
+              if (distHead < 1.3) {
+                humanZoneVal = Math.max(humanZoneVal, 1.0 - distHead / 1.3);
               }
 
               const dxB = (x - bodyCx) / bodyRx;
               const dyB = (y - bodyCy) / bodyRy;
               const distBody = dxB * dxB + dyB * dyB;
-              if (distBody < 2.0) {
-                humanZoneVal = Math.max(humanZoneVal, Math.max(0, 0.95 - distBody / 2.0));
+              if (distBody < 1.5) {
+                humanZoneVal = Math.max(humanZoneVal, 0.85 - distBody / 1.5);
               }
             } else {
-              // Center prior for user sitting in front of webcam
+              // Gentle localized center prior when face tracking is scanning
               const dxH = (x - defaultHeadCx) / defaultHeadR;
               const dyH = (y - defaultHeadCy) / defaultHeadR;
               const distHead = dxH * dxH + dyH * dyH;
-              if (distHead < 1.6) {
-                humanZoneVal = Math.max(humanZoneVal, Math.max(0, 0.70 - distHead / 1.6));
+              if (distHead < 1.2) {
+                humanZoneVal = Math.max(humanZoneVal, 0.35 * (1.0 - distHead / 1.2));
               }
 
-              const dxB = (x - defaultBodyCx) / defaultBodyRy;
+              const dxB = (x - defaultBodyCx) / defaultBodyRx;
               const dyB = (y - defaultBodyCy) / defaultBodyRy;
               const distBody = dxB * dxB + dyB * dyB;
-              if (distBody < 2.0) {
-                humanZoneVal = Math.max(humanZoneVal, Math.max(0, 0.60 - distBody / 2.0));
+              if (distBody < 1.4) {
+                humanZoneVal = Math.max(humanZoneVal, 0.25 * (1.0 - distBody / 1.4));
               }
             }
 
-            // 4. Skin Chrominance & Facial Warmth Heuristic
-            const isSkin = (r > 35 && g > 20 && b > 10 && r > g && (r - b) > 4 && Math.abs(r - g) > 2);
-            let skinVal = isSkin ? 0.85 : 0;
+            // 4. Accurate Skin Chrominance Heuristic (prevents background room from triggering)
+            const isSkin = (r > 80 && g > 50 && b > 35 && r > g && g > b && (r - g) > 12 && (r - b) > 18);
+            const skinVal = isSkin ? 0.65 : 0;
 
-            // 5. Combined Human Subject Presence (0.0 = Background, 1.0 = Human Figure)
-            const humanPresence = Math.min(1.0, Math.max(humanZoneVal, skinVal, motionVal * 1.5));
+            // 5. Subject Activity Weight (0.0 = Background, 1.0 = Active Human Subject)
+            const activity = Math.min(1.0, humanZoneVal * 0.9 + skinVal * 0.6 + motionVal * 1.2);
 
-            // 6. High Contrast Thermal Mapping:
+            // 6. Dynamic Thermal Temperature Mapping:
             const normLum = lum / 255;
             
-            // Background is cool dark navy/blue (LUT index 12 ~ 42)
-            const ambientBg = 12 + normLum * 30;
+            // Background is ALWAYS Cool Navy Blue / Deep Teal (LUT index 15 ~ 48)
+            const ambientBg = 15 + normLum * 33;
             
-            // Human subject (head, face, torso, arms, clothes) gets mapped to high heat (LUT index 130 ~ 245+)
-            // Fiery Red / Blaze Orange / Bright Yellow / White-Hot Core
-            const humanWarmthBase = humanPresence * (100 + normLum * 90);
-            const speedHeatBoost = humanPresence * (speedHeatFactor * 45);
+            // Human subject base warmth at 0 km/h: Cool Teal / Indigo Violet (LUT index +35 ~ +65)
+            // Ensures human figure is clearly visible against navy background without being red at 0 speed!
+            const baseHumanWarmth = activity * (35 + normLum * 30);
 
-            let finalThermal = ambientBg + humanWarmthBase + speedHeatBoost;
+            // Dynamic Temperature Boost from Speed Slider:
+            // 0 km/h -> 0 heat boost (Cool Teal/Violet)
+            // 45 km/h -> +60 heat boost (Warm Amber/Red)
+            // 100+ km/h -> +135 heat boost (Fiery Flame Red / Blaze Orange / White-Hot Core)
+            const speedHeatBoost = activity * (speedHeatFactor * 135);
+
+            let finalThermal = ambientBg + baseHumanWarmth + speedHeatBoost;
 
             // Sensor noise on active human figure
-            if (humanPresence > 0.1) {
+            if (activity > 0.1) {
               finalThermal += (Math.random() - 0.5) * 3;
             }
 
