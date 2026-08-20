@@ -86,15 +86,15 @@ document.addEventListener("DOMContentLoaded", () => {
     // 70 ~ 130: Transition cool to warm (Teal / Violet / Ochre)
     // 130 ~ 210: High Heat (Vibrant Crimson Red / Fiery Flame Red)
     // 210 ~ 255: Extreme Peak Heat (Amber Yellow / White-Hot Core)
-    grad.addColorStop(0.00, "rgb(4, 4, 18)");       // 0: Deep background blue-black
-    grad.addColorStop(0.12, "rgb(8, 22, 95)");      // 30: Cold dark navy
-    grad.addColorStop(0.25, "rgb(0, 85, 165)");     // 64: Deep cool blue
-    grad.addColorStop(0.38, "rgb(0, 145, 175)");    // 97: Teal / Cyan-Blue
-    grad.addColorStop(0.50, "rgb(85, 30, 115)");    // 128: Indigo Violet
-    grad.addColorStop(0.62, "rgb(195, 20, 20)");    // 158: Deep Crimson Red
-    grad.addColorStop(0.74, "rgb(245, 40, 10)");    // 189: Vibrant Fiery Red
-    grad.addColorStop(0.86, "rgb(255, 120, 0)");    // 220: Blaze Orange-Red
-    grad.addColorStop(0.95, "rgb(255, 220, 35)");   // 242: Bright Yellow-Hot
+    // Authentic FLIR Ironbow Fire & Ice Thermal Color Spectrum
+    grad.addColorStop(0.00, "rgb(2, 4, 18)");       // 0: Deep space navy black
+    grad.addColorStop(0.12, "rgb(6, 20, 95)");      // 30: Cold background navy blue
+    grad.addColorStop(0.25, "rgb(0, 110, 175)");    // 64: Cool Teal / Cyan
+    grad.addColorStop(0.38, "rgb(75, 15, 125)");    // 97: Deep Purple / Violet
+    grad.addColorStop(0.52, "rgb(175, 10, 60)");    // 133: Magenta / Dark Crimson
+    grad.addColorStop(0.66, "rgb(235, 30, 10)");    // 168: Fiery Flame Red
+    grad.addColorStop(0.80, "rgb(255, 120, 0)");    // 204: Vibrant Blaze Orange
+    grad.addColorStop(0.92, "rgb(255, 225, 20)");   // 235: Bright Yellow-Hot
     grad.addColorStop(1.00, "rgb(255, 255, 255)");  // 255: White-Hot Core
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, 256, 1);
@@ -808,7 +808,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         let userSumX = 0, userSumY = 0, userWeightSum = 0;
 
-        // Process each pixel: Motion Detection + Human Spatial Zone + Accurate Skin Chrominance + Speed Heat Variation
+        // Process each pixel: Radiometric Thermal Radiation Synthesis (FLIR Microbolometer emulated)
         for (let y = 0; y < th; y++) {
           for (let x = 0; x < tw; x++) {
             const idx = y * tw + x;
@@ -817,10 +817,11 @@ document.addEventListener("DOMContentLoaded", () => {
             const g = pixels[pIdx + 1];
             const b = pixels[pIdx + 2];
 
-            // 1. Grayscale luminance
+            // 1. Grayscale luminance & Infrared Radiation Approximation
             const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+            const normLum = lum / 255;
 
-            // 2. Motion Detection (Frame Differencing)
+            // 2. Motion Detection (Frame Differencing / Friction Heat)
             const prevLum = prevLumaBuffer[idx];
             const diff = Math.abs(lum - prevLum);
             prevLumaBuffer[idx] = lum;
@@ -828,7 +829,7 @@ document.addEventListener("DOMContentLoaded", () => {
             if (diff > 6) {
               motionHeatMap[idx] = Math.min(1.0, motionHeatMap[idx] + diff * 0.08);
             } else {
-              motionHeatMap[idx] *= 0.88; // Smooth heat trail decay
+              motionHeatMap[idx] *= 0.88;
             }
             const motionVal = motionHeatMap[idx];
 
@@ -838,39 +839,39 @@ document.addEventListener("DOMContentLoaded", () => {
               const dxH = (x - headCx) / headR;
               const dyH = (y - headCy) / headR;
               const distHead = dxH * dxH + dyH * dyH;
-              if (distHead < 1.3) {
-                humanZoneVal = Math.max(humanZoneVal, 1.0 - distHead / 1.3);
+              if (distHead < 1.4) {
+                humanZoneVal = Math.max(humanZoneVal, 1.0 - distHead / 1.4);
               }
 
               const dxB = (x - bodyCx) / bodyRx;
               const dyB = (y - bodyCy) / bodyRy;
               const distBody = dxB * dxB + dyB * dyB;
-              if (distBody < 1.5) {
-                humanZoneVal = Math.max(humanZoneVal, 0.85 - distBody / 1.5);
+              if (distBody < 1.6) {
+                humanZoneVal = Math.max(humanZoneVal, 0.85 - distBody / 1.6);
               }
             } else {
-              // Gentle localized center prior when face tracking is scanning
               const dxH = (x - defaultHeadCx) / defaultHeadR;
               const dyH = (y - defaultHeadCy) / defaultHeadR;
               const distHead = dxH * dxH + dyH * dyH;
-              if (distHead < 1.2) {
-                humanZoneVal = Math.max(humanZoneVal, 0.35 * (1.0 - distHead / 1.2));
+              if (distHead < 1.3) {
+                humanZoneVal = Math.max(humanZoneVal, 0.40 * (1.0 - distHead / 1.3));
               }
 
               const dxB = (x - defaultBodyCx) / defaultBodyRx;
               const dyB = (y - defaultBodyCy) / defaultBodyRy;
               const distBody = dxB * dxB + dyB * dyB;
-              if (distBody < 1.4) {
-                humanZoneVal = Math.max(humanZoneVal, 0.25 * (1.0 - distBody / 1.4));
+              if (distBody < 1.5) {
+                humanZoneVal = Math.max(humanZoneVal, 0.30 * (1.0 - distBody / 1.5));
               }
             }
 
-            // 4. Accurate Skin Chrominance Heuristic (prevents background room from triggering)
-            const isSkin = (r > 80 && g > 50 && b > 35 && r > g && g > b && (r - g) > 12 && (r - b) > 18);
-            const skinVal = isSkin ? 0.65 : 0;
+            // 4. Accurate Skin Chrominance Heuristic
+            const isSkin = (r > 75 && g > 45 && b > 30 && r > g && g > b && (r - g) > 10 && (r - b) > 15);
+            const skinVal = isSkin ? 0.7 : 0;
 
-            // 5. Subject Activity Weight (0.0 = Background, 1.0 = Active Human Subject)
-            const activity = Math.min(1.0, humanZoneVal * 0.9 + skinVal * 0.6 + motionVal * 1.2);
+            // 5. Infrared Radiation Synthesis across ALL objects
+            const objectRadiation = normLum * 0.45 + (isSkin ? 0.35 : 0) + humanZoneVal * 0.45 + motionVal * 0.2;
+            const activity = Math.min(1.0, objectRadiation);
 
             // Accumulate weighted human position for real-time tracking fallback
             if (activity > 0.25) {
@@ -879,24 +880,22 @@ document.addEventListener("DOMContentLoaded", () => {
               userWeightSum += activity;
             }
 
-            // 6. Dynamic Thermal Temperature Mapping:
-            const normLum = lum / 255;
+            // 6. Real Radiometric Thermal Scale Mapping:
+            // Cold background objects: 15 ~ 60 (Deep Navy -> Cool Indigo -> Teal)
+            const ambientBg = 15 + normLum * 45;
             
-            // Background is ALWAYS Cool Navy Blue / Deep Teal (LUT index 15 ~ 48)
-            const ambientBg = 15 + normLum * 33;
-            
-            // Human subject base warmth at 0 km/h: Cool Teal / Indigo Violet (LUT index +35 ~ +65)
-            // Ensures human figure is clearly visible against navy background without being red at 0 speed!
-            const baseHumanWarmth = activity * (35 + normLum * 30);
+            // Human subject & warm objects (face, neck, hands, clothes contours): +40 ~ +80 thermal boost
+            const subjectHeat = activity * (40 + normLum * 40);
 
             // Dynamic Temperature Boost from Speed Slider:
-            const speedHeatBoost = activity * (speedHeatFactor * 135);
+            // Shifts thermal spectrum into Magenta -> Fiery Red -> Blaze Orange -> Yellow -> White-Hot Core
+            const speedHeatBoost = activity * (speedHeatFactor * 120);
 
-            let finalThermal = ambientBg + baseHumanWarmth + speedHeatBoost;
+            let finalThermal = ambientBg + subjectHeat + speedHeatBoost;
 
-            // Sensor noise on active human figure
+            // Sensor micro-noise
             if (activity > 0.1) {
-              finalThermal += (Math.random() - 0.5) * 3;
+              finalThermal += (Math.random() - 0.5) * 2.5;
             }
 
             // Clamp to 0 ~ 255
