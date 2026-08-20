@@ -739,7 +739,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const h = riderCanvas.height;
 
     // Share raw webcam frame to Screen 7 (Receiver) only when child windows are active
-    if (cameraActive && videoFeed.srcObject && videoFeed.readyState === videoFeed.HAVE_ENOUGH_DATA) {
+    if (cameraActive && videoFeed.srcObject && (videoFeed.readyState >= 2 || videoFeed.videoWidth > 0)) {
       const now = performance.now();
       if (childWindows.length > 0 && (now - lastShareTime > 100)) { // limit sharing to active sub-windows at 10 FPS
         lastShareTime = now;
@@ -767,7 +767,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const speedRatio = Math.min(1.0, currentSpeed / 130);
       const speedHeatFactor = Math.pow(speedRatio, 0.75); // Speed heat boost curve
 
-      if (cameraActive && videoFeed.srcObject && videoFeed.readyState === videoFeed.HAVE_ENOUGH_DATA) {
+      if (cameraActive && videoFeed.srcObject && (videoFeed.readyState >= 2 || videoFeed.videoWidth > 0)) {
         // Draw current webcam frame to offscreen canvas
         thermalCtx.drawImage(videoFeed, 0, 0, tw, th);
         const imgData = thermalCtx.getImageData(0, 0, tw, th);
@@ -913,7 +913,7 @@ document.addEventListener("DOMContentLoaded", () => {
         riderCtx.filter = "contrast(1.12) brightness(1.05)";
       }
 
-      if (cameraActive && videoFeed.srcObject && videoFeed.readyState === videoFeed.HAVE_ENOUGH_DATA) {
+      if (cameraActive && videoFeed.srcObject && (videoFeed.readyState >= 2 || videoFeed.videoWidth > 0)) {
         riderCtx.imageSmoothingEnabled = true;
         riderCtx.drawImage(videoFeed, 0, 0, w, h);
       } else {
@@ -1677,16 +1677,19 @@ document.addEventListener("DOMContentLoaded", () => {
   mainLoopId = requestAnimationFrame(mainRenderLoop);
   startSnapshotTimer();
 
-  // --- Auto-start Webcam in Server/TouchDesigner Context ---
-  const urlParams = new URLSearchParams(window.location.search);
-  const autoStart = urlParams.get('autostart') === 'true' || urlParams.get('td') === 'true';
-  const isServer = window.location.protocol !== "file:";
-  
-  // If ?autostart=true is set, or if running on local server, try to start the camera automatically
-  if ((autoStart || isServer) && window.location.protocol !== "file:") {
-    setTimeout(() => {
-      console.log("[Raduga Telemetry] Attempting to auto-start webcam for TouchDesigner/Web integration...");
-      startWebcam();
-    }, 800);
+  // --- Auto-start Webcam on Page Load for all protocols ---
+  setTimeout(() => {
+    console.log("[Raduga Telemetry] Auto-starting webcam...");
+    startWebcam();
+  }, 300);
+
+  // Click anywhere on main camera card to start/retry camera
+  if (mainMediaCard) {
+    mainMediaCard.style.cursor = "pointer";
+    mainMediaCard.addEventListener("click", () => {
+      if (!cameraActive) {
+        startWebcam();
+      }
+    });
   }
 });
