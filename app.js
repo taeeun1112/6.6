@@ -879,28 +879,24 @@ document.addEventListener("DOMContentLoaded", () => {
               userWeightSum += activity;
             }
 
-            // 6. Dynamic FLIR Ironbow Thermal Temperature Mapping:
+            // 6. Dynamic Thermal Temperature Mapping:
             const normLum = lum / 255;
             
-            // Background is ALWAYS Cool Ocean Blue / Deep Cyan (LUT index 12 ~ 42)
-            const ambientBg = 12 + normLum * 30;
+            // Background is ALWAYS Cool Navy Blue / Deep Teal (LUT index 15 ~ 48)
+            const ambientBg = 15 + normLum * 33;
             
-            // Human subject base thermal radiation (Face/Head core is warmest, shoulders/torso transition smoothly)
-            const baseHumanWarmth = activity * (50 + normLum * 45);
+            // Human subject base warmth at 0 km/h: Cool Teal / Indigo Violet (LUT index +35 ~ +65)
+            // Ensures human figure is clearly visible against navy background without being red at 0 speed!
+            const baseHumanWarmth = activity * (35 + normLum * 30);
 
-            // Dynamic Heat Radiation Boost from Speed Slider:
-            const speedHeatBoost = activity * (speedHeatFactor * 125);
+            // Dynamic Temperature Boost from Speed Slider:
+            const speedHeatBoost = activity * (speedHeatFactor * 135);
 
             let finalThermal = ambientBg + baseHumanWarmth + speedHeatBoost;
 
-            // Sensor micro-noise
-            if (activity > 0.05) {
-              finalThermal += (Math.random() - 0.5) * 2.5;
-            }
-
-            // Authentic FLIR horizontal sensor line grid texture
-            if (y % 2 === 0) {
-              finalThermal *= 0.95;
+            // Sensor noise on active human figure
+            if (activity > 0.1) {
+              finalThermal += (Math.random() - 0.5) * 3;
             }
 
             // Clamp to 0 ~ 255
@@ -1224,37 +1220,44 @@ document.addEventListener("DOMContentLoaded", () => {
     const timeStamp = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}`;
     const frameLabel = `#${String(captureCount).padStart(5,'0')}`;
 
-    // 3. Update circular gallery card (loop format)
+    // 3. Update circular gallery card (loop format) with auto memory garbage collection
     const galleryScrollPanel = document.getElementById("gallery-scroll-panel");
     if (galleryScrollPanel && galleryCards.length === 3) {
-      const imgDataUrl = riderCanvas.toDataURL("image/jpeg", 0.6);
-      const card = galleryCards[currentGalleryIndex];
-      
-      // Update image
-      const img = card.querySelector("img");
-      if (img) {
-        img.src = imgDataUrl;
-        img.alt = `Capture ${frameLabel}`;
-      }
-      
-      // Update text
-      const topRow = card.querySelector(".gallery-card-top");
-      if (topRow) {
-        topRow.innerHTML = `<span>CAM-01</span><span class="gallery-card-frame">${frameLabel}</span>`;
-      }
-      
-      const bottomRow = card.querySelector(".gallery-card-bottom");
-      if (bottomRow) {
-        bottomRow.innerHTML = `<span>${timeStamp}</span><span style="color: #00e5ff;">CAPTURED</span>`;
-      }
-      
-      // Trigger card update animation
-      card.classList.remove("just-updated");
-      void card.offsetWidth; // trigger reflow
-      card.classList.add("just-updated");
-      
-      // Increment index circularly
-      currentGalleryIndex = (currentGalleryIndex + 1) % 3;
+      riderCanvas.toBlob((blob) => {
+        if (!blob) return;
+        const card = galleryCards[currentGalleryIndex];
+        
+        // Update image with memory release
+        const img = card.querySelector("img");
+        if (img) {
+          if (img.dataset.blobUrl) {
+            URL.revokeObjectURL(img.dataset.blobUrl);
+          }
+          const newUrl = URL.createObjectURL(blob);
+          img.dataset.blobUrl = newUrl;
+          img.src = newUrl;
+          img.alt = `Capture ${frameLabel}`;
+        }
+        
+        // Update text
+        const topRow = card.querySelector(".gallery-card-top");
+        if (topRow) {
+          topRow.innerHTML = `<span>CAM-01</span><span class="gallery-card-frame">${frameLabel}</span>`;
+        }
+        
+        const bottomRow = card.querySelector(".gallery-card-bottom");
+        if (bottomRow) {
+          bottomRow.innerHTML = `<span>${timeStamp}</span><span style="color: #00e5ff;">CAPTURED</span>`;
+        }
+        
+        // Trigger card update animation
+        card.classList.remove("just-updated");
+        void card.offsetWidth; // trigger reflow
+        card.classList.add("just-updated");
+        
+        // Increment index circularly
+        currentGalleryIndex = (currentGalleryIndex + 1) % 3;
+      }, "image/jpeg", 0.5);
     }
   }
 
