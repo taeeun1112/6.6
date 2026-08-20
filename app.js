@@ -68,11 +68,11 @@ document.addEventListener("DOMContentLoaded", () => {
   const sharingCtx = sharingCanvas.getContext("2d");
   let lastShareTime = 0;
 
-  // Offscreen canvas for thermal pixel processing (320x180 for retro pixelation + high performance)
+  // Offscreen canvas for thermal pixel processing (240x135 for retro pixelation + ultra high performance)
   const thermalCanvas = document.createElement("canvas");
-  thermalCanvas.width = 320;
-  thermalCanvas.height = 180;
-  const thermalCtx = thermalCanvas.getContext("2d");
+  thermalCanvas.width = 240;
+  thermalCanvas.height = 135;
+  const thermalCtx = thermalCanvas.getContext("2d", { willReadFrequently: true });
 
   // Thermal Color Lookup Table (LUT) - Ironbow Fire & Ice Gradient
   const thermalLUT = new Uint8ClampedArray(256 * 3);
@@ -107,9 +107,9 @@ document.addEventListener("DOMContentLoaded", () => {
   }
   initThermalLUT();
 
-  // Motion Detection & Human Heat Tracking Buffers (320x180)
-  const prevLumaBuffer = new Float32Array(320 * 180);
-  const motionHeatMap = new Float32Array(320 * 180);
+  // Motion Detection & Human Heat Tracking Buffers (240x135)
+  const prevLumaBuffer = new Float32Array(240 * 135);
+  const motionHeatMap = new Float32Array(240 * 135);
 
   const mainMediaCard = document.getElementById("main-media-card");
   const thermalFaceBox = document.getElementById("thermal-face-box");
@@ -231,10 +231,10 @@ document.addEventListener("DOMContentLoaded", () => {
   function initFaceTracker() {
     if (typeof tracking !== "undefined") {
       faceTracker = new tracking.ObjectTracker("face");
-      // Scale 1.25 allows detecting human faces at realistic desk/webcam distances reliably
-      faceTracker.setInitialScale(1.25);
-      faceTracker.setStepSize(1.25);
-      faceTracker.setEdgesDensity(0.05);
+      // Fast scan parameters to reduce main thread CPU overhead
+      faceTracker.setInitialScale(1.4);
+      faceTracker.setStepSize(1.6);
+      faceTracker.setEdgesDensity(0.1);
       
       faceTracker.on("track", (event) => {
         if (event.data && event.data.length > 0) {
@@ -738,18 +738,16 @@ document.addEventListener("DOMContentLoaded", () => {
     const w = riderCanvas.width;
     const h = riderCanvas.height;
 
-    // Share raw webcam frame to Screen 7 (Receiver)
+    // Share raw webcam frame to Screen 7 (Receiver) only when child windows are active
     if (cameraActive && videoFeed.srcObject && videoFeed.readyState === videoFeed.HAVE_ENOUGH_DATA) {
       const now = performance.now();
-      if (now - lastShareTime > 66) { // limit sharing to ~15 FPS to reduce CPU/memory overhead
+      if (childWindows.length > 0 && (now - lastShareTime > 100)) { // limit sharing to active sub-windows at 10 FPS
         lastShareTime = now;
         sharingCtx.drawImage(videoFeed, 0, 0, 640, 360);
         sharingCanvas.toBlob((blob) => {
           if (!blob) return;
           const msg = { type: 'frame', blob };
-          if (cameraChannel) {
-            cameraChannel.postMessage(msg);
-          }
+          if (cameraChannel) cameraChannel.postMessage(msg);
           childWindows = childWindows.filter(win => {
             try {
               if (win.closed) return false;
@@ -759,7 +757,7 @@ document.addEventListener("DOMContentLoaded", () => {
               return false;
             }
           });
-        }, 'image/jpeg', 0.6);
+        }, 'image/jpeg', 0.5);
       }
     }
     
@@ -1302,8 +1300,10 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // --- Main Animation Loop ---
+  let monitorFrameCounter = 0;
   function drawMonitorCells() {
-    // Mirror riderCanvas to all active monitor canvases in real time
+    monitorFrameCounter++;
+    if (monitorFrameCounter % 2 !== 0) return; // Throttle 6 sub-canvases to 30 FPS to save 50% GPU/CPU overhead
     for (let i = 0; i < monitorCtxs.length; i++) {
       const mc = monitorCanvases[i];
       const ctx = monitorCtxs[i];
