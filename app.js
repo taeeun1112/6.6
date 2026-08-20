@@ -926,16 +926,29 @@ document.addEventListener("DOMContentLoaded", () => {
         riderCtx.imageSmoothingEnabled = true;
         riderCtx.drawImage(videoFeed, 0, 0, w, h);
       } else {
-        // MODERN VECTOR RADAR FALLBACK (Apple style light-grey minimalist circles)
+        riderCtx.fillStyle = "#040612";
+        riderCtx.fillRect(0, 0, w, h);
+
+        const cx = w / 2;
+        const cy = h / 2;
+
+        riderCtx.fillStyle = "rgba(0, 229, 255, 0.15)";
         riderCtx.beginPath();
-        riderCtx.moveTo(cx, cy);
-        riderCtx.lineTo(cx + Math.cos(sweepAngle) * radius, cy + Math.sin(sweepAngle) * radius);
+        riderCtx.arc(cx, cy - 15, 36, 0, 2 * Math.PI);
+        riderCtx.fill();
+
+        riderCtx.strokeStyle = "#00e5ff";
+        riderCtx.lineWidth = 2;
         riderCtx.stroke();
-        
-        // Draw a subtle coordinates text inside fallback screen
-        riderCtx.fillStyle = "rgba(255, 255, 255, 0.2)";
-        riderCtx.font = "11px 'Inter'";
-        riderCtx.fillText("RADAR SENSOR ONLINE", cx - 60, cy - radius - 20);
+
+        riderCtx.fillStyle = "#ffffff";
+        riderCtx.font = "600 15px 'Inter', -apple-system, sans-serif";
+        riderCtx.textAlign = "center";
+        riderCtx.fillText("📷 CLICK HERE TO START CAMERA", cx, cy + 40);
+
+        riderCtx.fillStyle = "rgba(0, 229, 255, 0.7)";
+        riderCtx.font = "13px 'Inter', -apple-system, sans-serif";
+        riderCtx.fillText("상단 'Start Camera' 버튼이나 화면을 클릭하세요", cx, cy + 64);
       }
     }
   }
