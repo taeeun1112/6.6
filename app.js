@@ -230,10 +230,10 @@ document.addEventListener("DOMContentLoaded", () => {
   function initFaceTracker() {
     if (typeof tracking !== "undefined") {
       faceTracker = new tracking.ObjectTracker("face");
-      // Scale 1.8 allows detecting faces at realistic desk/webcam distances
-      faceTracker.setInitialScale(1.8);
-      faceTracker.setStepSize(1.5);
-      faceTracker.setEdgesDensity(0.08);
+      // Scale 1.25 allows detecting human faces at realistic desk/webcam distances reliably
+      faceTracker.setInitialScale(1.25);
+      faceTracker.setStepSize(1.25);
+      faceTracker.setEdgesDensity(0.05);
       
       faceTracker.on("track", (event) => {
         if (event.data && event.data.length > 0) {
@@ -249,13 +249,13 @@ document.addEventListener("DOMContentLoaded", () => {
           smoothFace.active = true;
           
           // Smoothly lerp tracker box
-          smoothFace.x = smoothFace.x ? lerp(smoothFace.x, largestFace.x, 0.25) : largestFace.x;
-          smoothFace.y = smoothFace.y ? lerp(smoothFace.y, largestFace.y, 0.25) : largestFace.y;
-          smoothFace.width = smoothFace.width ? lerp(smoothFace.width, largestFace.width, 0.25) : largestFace.width;
-          smoothFace.height = smoothFace.height ? lerp(smoothFace.height, largestFace.height, 0.25) : largestFace.height;
+          smoothFace.x = smoothFace.x ? lerp(smoothFace.x, largestFace.x, 0.3) : largestFace.x;
+          smoothFace.y = smoothFace.y ? lerp(smoothFace.y, largestFace.y, 0.3) : largestFace.y;
+          smoothFace.width = smoothFace.width ? lerp(smoothFace.width, largestFace.width, 0.3) : largestFace.width;
+          smoothFace.height = smoothFace.height ? lerp(smoothFace.height, largestFace.height, 0.3) : largestFace.height;
         } else {
-          // If face is temporarily lost (e.g. tilted/blinked), remember last position for 2 seconds
-          if (performance.now() - lastFaceDetectedTime > 2000) {
+          // If face is temporarily lost (e.g. tilted/blinked), remember last position for 4 seconds
+          if (performance.now() - lastFaceDetectedTime > 4000) {
             lastDetectedFace = null;
             smoothFace.active = false;
           }
@@ -790,15 +790,24 @@ document.addEventListener("DOMContentLoaded", () => {
 
           headCx = fx + fw * 0.5;
           headCy = fy + fh * 0.5;
-          headR = Math.max(fw, fh) * 0.7;
+          headR = Math.max(fw, fh) * 0.85;
 
           bodyCx = headCx;
-          bodyCy = headCy + fh * 1.35;
-          bodyRx = fw * 1.5;
-          bodyRy = fh * 1.8;
+          bodyCy = headCy + fh * 1.6;
+          bodyRx = fw * 2.0;
+          bodyRy = fh * 2.5;
         }
 
-        // Process each pixel: Motion Detection + Human Face/Body Detection + Skin Chrominance + Speed Heat Boost
+        // Center fallback prior for desk user in front of camera
+        const defaultHeadCx = tw * 0.5;
+        const defaultHeadCy = th * 0.42;
+        const defaultHeadR = Math.min(tw, th) * 0.32;
+        const defaultBodyCx = defaultHeadCx;
+        const defaultBodyCy = defaultHeadCy + defaultHeadR * 1.4;
+        const defaultBodyRx = defaultHeadR * 1.8;
+        const defaultBodyRy = defaultHeadR * 2.2;
+
+        // Process each pixel: Motion Detection + Human Spatial Zone + Skin Chrominance + High Thermal Contrast
         for (let y = 0; y < th; y++) {
           for (let x = 0; x < tw; x++) {
             const idx = y * tw + x;
@@ -815,55 +824,69 @@ document.addEventListener("DOMContentLoaded", () => {
             const diff = Math.abs(lum - prevLum);
             prevLumaBuffer[idx] = lum;
 
-            if (diff > 7) {
-              motionHeatMap[idx] = Math.min(1.0, motionHeatMap[idx] + diff * 0.06);
+            if (diff > 5) {
+              motionHeatMap[idx] = Math.min(1.0, motionHeatMap[idx] + diff * 0.08);
             } else {
-              motionHeatMap[idx] *= 0.91; // Smooth heat trail decay
+              motionHeatMap[idx] *= 0.90; // Smooth heat trail decay
             }
             const motionVal = motionHeatMap[idx];
 
-            // 3. Human Face & Body Spatial Heat Zone
-            let humanVal = 0;
+            // 3. Human Spatial Heat Zone (Detected Face/Body OR Center User Fallback)
+            let humanZoneVal = 0;
             if (hasFace) {
               const dxH = (x - headCx) / headR;
               const dyH = (y - headCy) / headR;
               const distHead = dxH * dxH + dyH * dyH;
-              if (distHead < 1.4) {
-                humanVal = Math.max(humanVal, Math.max(0, 1.0 - distHead / 1.4));
+              if (distHead < 1.8) {
+                humanZoneVal = Math.max(humanZoneVal, Math.max(0, 1.0 - distHead / 1.8));
               }
 
               const dxB = (x - bodyCx) / bodyRx;
               const dyB = (y - bodyCy) / bodyRy;
               const distBody = dxB * dxB + dyB * dyB;
-              if (distBody < 1.6) {
-                humanVal = Math.max(humanVal, Math.max(0, 0.9 - distBody / 1.6));
+              if (distBody < 2.0) {
+                humanZoneVal = Math.max(humanZoneVal, Math.max(0, 0.95 - distBody / 2.0));
+              }
+            } else {
+              // Center prior for user sitting in front of webcam
+              const dxH = (x - defaultHeadCx) / defaultHeadR;
+              const dyH = (y - defaultHeadCy) / defaultHeadR;
+              const distHead = dxH * dxH + dyH * dyH;
+              if (distHead < 1.6) {
+                humanZoneVal = Math.max(humanZoneVal, Math.max(0, 0.70 - distHead / 1.6));
+              }
+
+              const dxB = (x - defaultBodyCx) / defaultBodyRy;
+              const dyB = (y - defaultBodyCy) / defaultBodyRy;
+              const distBody = dxB * dxB + dyB * dyB;
+              if (distBody < 2.0) {
+                humanZoneVal = Math.max(humanZoneVal, Math.max(0, 0.60 - distBody / 2.0));
               }
             }
 
-            // 4. Skin Chrominance / Human Warmth Heuristic (detect hands, skin, neck)
-            const isSkinLike = (r > 60 && g > 30 && b > 20 && r > g && (r - b) > 8 && (r - g) > 5);
-            if (isSkinLike) {
-              humanVal = Math.max(humanVal, 0.65);
-            }
+            // 4. Skin Chrominance & Facial Warmth Heuristic
+            const isSkin = (r > 35 && g > 20 && b > 10 && r > g && (r - b) > 4 && Math.abs(r - g) > 2);
+            let skinVal = isSkin ? 0.85 : 0;
 
-            // 5. Combined Activity Weight for Subject (0.0 = static background, 1.0 = active human/motion)
-            const activity = Math.min(1.0, humanVal * 1.2 + motionVal * 1.4);
+            // 5. Combined Human Subject Presence (0.0 = Background, 1.0 = Human Figure)
+            const humanPresence = Math.min(1.0, Math.max(humanZoneVal, skinVal, motionVal * 1.5));
 
-            // 6. Thermal Mapping:
-            // Static Background: Cold ambient Navy / Blue (20 ~ 55 in LUT) - does NOT turn red at high speed
-            const ambientTemp = 18 + (lum / 255) * 30;
+            // 6. High Contrast Thermal Mapping:
+            const normLum = lum / 255;
+            
+            // Background is cool dark navy/blue (LUT index 12 ~ 42)
+            const ambientBg = 12 + normLum * 30;
+            
+            // Human subject (head, face, torso, arms, clothes) gets mapped to high heat (LUT index 130 ~ 245+)
+            // Fiery Red / Blaze Orange / Bright Yellow / White-Hot Core
+            const humanWarmthBase = humanPresence * (100 + normLum * 90);
+            const speedHeatBoost = humanPresence * (speedHeatFactor * 45);
 
-            // Human / Motion Subject:
-            // At 0 km/h: Warm violet/teal (~75-95)
-            // At high speed: Turns vibrant Crimson Red -> Fiery Flame Red (160 ~ 230+)
-            const baseHumanWarmth = activity * 48;
-            const speedHeatBoost = activity * (speedHeatFactor * 165);
+            let finalThermal = ambientBg + humanWarmthBase + speedHeatBoost;
 
-            let finalThermal = ambientTemp + baseHumanWarmth + speedHeatBoost;
-
-            // Subtle thermal sensor noise on active areas
-            if (activity > 0.05) {
-              finalThermal += (Math.random() - 0.5) * 4;
+            // Sensor noise on active human figure
+            if (humanPresence > 0.1) {
+              finalThermal += (Math.random() - 0.5) * 3;
             }
 
             // Clamp to 0 ~ 255
@@ -953,13 +976,13 @@ document.addEventListener("DOMContentLoaded", () => {
       // Update dynamic HUD overlays
       updateThermalOverlayTracker();
     } else {
-      // Apply filters directly to canvas context
+      // Apply filters directly to canvas context with enhanced clarity for human subject
       if (activeFilter === "CINEMATIC") {
-        riderCtx.filter = "contrast(1.05) saturate(1.1) brightness(0.95)";
+        riderCtx.filter = "contrast(1.2) saturate(1.25) brightness(1.05)";
       } else if (activeFilter === "GRAYSCALE") {
-        riderCtx.filter = "grayscale(1) contrast(1.15)";
+        riderCtx.filter = "grayscale(1) contrast(1.3) brightness(1.05)";
       } else {
-        riderCtx.filter = "none";
+        riderCtx.filter = "contrast(1.12) brightness(1.05)";
       }
 
       if (cameraActive && videoFeed.srcObject && videoFeed.readyState === videoFeed.HAVE_ENOUGH_DATA) {
@@ -1052,6 +1075,12 @@ document.addEventListener("DOMContentLoaded", () => {
     if (thermalFaceBox) {
       thermalFaceBox.style.left = `${currentBoxX}%`;
       thermalFaceBox.style.top = `${currentBoxY}%`;
+      if (smoothFace.active && smoothFace.width > 0) {
+        const vw = videoFeed.videoWidth || 1280;
+        const bw = Math.max(100, Math.min(220, (smoothFace.width / vw) * 100 * 2.2));
+        thermalFaceBox.style.width = `${bw}%`;
+        thermalFaceBox.style.height = `${bw * 1.15}%`;
+      }
     }
 
     // Dynamic Scale Indicator follows the speed-mapped temperature if not being dragged
