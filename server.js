@@ -23,9 +23,61 @@ const server = http.createServer((req, res) => {
   // Decode URL to handle Korean directory names properly and strip query parameters
   let reqPath = decodeURIComponent(req.url).split('?')[0];
   
-  // If base route is requested, serve Screen 6 index.html directly
+  // If base route is requested, provide a landing page
   if (reqPath === '/' || reqPath === '/index.html') {
-    reqPath = '/산학 6번 데이터:홈페이지/index.html';
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <title>Raduga Mobility Control Center</title>
+        <style>
+          body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background: #000;
+            color: #fff;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+          }
+          h1 {
+            font-weight: 300;
+            margin-bottom: 30px;
+            letter-spacing: -0.5px;
+          }
+          .btn-container {
+            display: flex;
+            gap: 20px;
+          }
+          .btn {
+            background: #1c1c1e;
+            border: 1px solid #3a3a3c;
+            color: #fff;
+            padding: 15px 30px;
+            font-size: 16px;
+            border-radius: 12px;
+            cursor: pointer;
+            text-decoration: none;
+            transition: all 0.2s ease;
+          }
+          .btn:hover {
+            background: #fff;
+            color: #000;
+        </style>
+      </head>
+      <body>
+        <h1>Raduga Mobility Control</h1>
+        <div class="btn-container">
+          <a class="btn" href="/산학 6번 데이터:홈페이지/index.html?autostart=true">Open Screen 6 (Thermal telemetry)</a>
+        </div>
+      </body>
+      </html>
+    `);
+    return;
   }
 
   let filePath = path.join(PUBLIC_DIR, reqPath);

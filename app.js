@@ -539,18 +539,36 @@ document.addEventListener("DOMContentLoaded", () => {
       });
     }
 
-    // Standard video request first (guarantees compatibility across built-in & USB webcams)
+    // Try ideal high quality HD constraint first
     try {
       return await navigator.mediaDevices.getUserMedia({
-        video: true,
+        video: {
+          width: { ideal: 1280, max: 1920 },
+          height: { ideal: 720, max: 1080 },
+          facingMode: "user"
+        },
         audio: false
       });
     } catch (err) {
-      console.warn("Basic video request failed, trying fallback HD constraints:", err);
-      return await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 1280 }, height: { ideal: 720 } },
-        audio: false
-      });
+      console.warn("High-res constraint failed, falling back to standard video constraint:", err);
+      // Fallback 1: Standard definition
+      try {
+        return await navigator.mediaDevices.getUserMedia({
+          video: {
+            width: { ideal: 640 },
+            height: { ideal: 480 },
+            facingMode: "user"
+          },
+          audio: false
+        });
+      } catch (err2) {
+        console.warn("Standard constraint failed, falling back to basic video:", err2);
+        // Fallback 2: Plain video
+        return await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: false
+        });
+      }
     }
   }
 
@@ -558,13 +576,19 @@ document.addEventListener("DOMContentLoaded", () => {
     if (btnCameraPower) btnCameraPower.textContent = "Connecting...";
     try {
       const stream = await requestUserCameraStream();
-      videoFeed.muted = true;
-      videoFeed.defaultMuted = true;
-      videoFeed.playsInline = true;
-      videoFeed.setAttribute("muted", "");
-      videoFeed.setAttribute("playsinline", "");
-      videoFeed.setAttribute("autoplay", "");
       videoFeed.srcObject = stream;
+
+      // Wait until video metadata is loaded and video is playing
+      await new Promise((resolve) => {
+        if (videoFeed.readyState >= 2) {
+          resolve();
+        } else {
+          videoFeed.onloadedmetadata = () => {
+            resolve();
+          };
+          setTimeout(resolve, 3000);
+        }
+      });
 
       try {
         await videoFeed.play();
@@ -577,10 +601,8 @@ document.addEventListener("DOMContentLoaded", () => {
         btnCameraPower.textContent = "Stop Camera";
         btnCameraPower.classList.add("active");
       }
-      if (gpsStatusBadge) {
-        gpsStatusBadge.textContent = "GPS LOCKED & STREAMING";
-        gpsStatusBadge.classList.add("active");
-      }
+      gpsStatusBadge.textContent = "GPS LOCKED & STREAMING";
+      gpsStatusBadge.classList.add("active");
 
       // Stream track ended handler (e.g. camera unplugged)
       stream.getVideoTracks().forEach(track => {
@@ -590,8 +612,8 @@ document.addEventListener("DOMContentLoaded", () => {
         };
       });
 
-      // Start face tracking if library is loaded safely
-      if (typeof tracking !== "undefined" && faceTracker && !trackerTask) {
+      // Start face tracking
+      if (faceTracker && !trackerTask) {
         try {
           trackerTask = tracking.track('#webcam-feed', faceTracker);
         } catch (tErr) {
@@ -716,18 +738,10 @@ document.addEventListener("DOMContentLoaded", () => {
     const w = riderCanvas.width;
     const h = riderCanvas.height;
 
-    const hasStream = (videoFeed && videoFeed.srcObject && videoFeed.srcObject.active);
-    const isVideoReady = hasStream && (videoFeed.videoWidth > 0 || videoFeed.readyState >= 1 || cameraActive);
-
-    // Auto-recover video playback if paused
-    if (hasStream && videoFeed.paused) {
-      videoFeed.play().catch(() => {});
-    }
-
     // Share raw webcam frame to Screen 7 (Receiver) only when child windows are active
-    if (isVideoReady && childWindows.length > 0) {
+    if (cameraActive && videoFeed.srcObject && videoFeed.readyState === videoFeed.HAVE_ENOUGH_DATA) {
       const now = performance.now();
-      if (now - lastShareTime > 100) { // limit sharing to active sub-windows at 10 FPS
+      if (childWindows.length > 0 && (now - lastShareTime > 100)) { // limit sharing to active sub-windows at 10 FPS
         lastShareTime = now;
         sharingCtx.drawImage(videoFeed, 0, 0, 640, 360);
         sharingCanvas.toBlob((blob) => {
@@ -753,7 +767,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const speedRatio = Math.min(1.0, currentSpeed / 130);
       const speedHeatFactor = Math.pow(speedRatio, 0.75); // Speed heat boost curve
 
-      if (isVideoReady) {
+      if (cameraActive && videoFeed.srcObject && videoFeed.readyState === videoFeed.HAVE_ENOUGH_DATA) {
         // Draw current webcam frame to offscreen canvas
         thermalCtx.drawImage(videoFeed, 0, 0, tw, th);
         const imgData = thermalCtx.getImageData(0, 0, tw, th);
@@ -783,9 +797,18 @@ document.addEventListener("DOMContentLoaded", () => {
           bodyRy = fh * 2.5;
         }
 
+        // Center fallback prior for desk user in front of camera (subtle localized weight)
+        const defaultHeadCx = tw * 0.5;
+        const defaultHeadCy = th * 0.45;
+        const defaultHeadR = Math.min(tw, th) * 0.25;
+        const defaultBodyCx = defaultHeadCx;
+        const defaultBodyCy = defaultHeadCy + defaultHeadR * 1.3;
+        const defaultBodyRx = defaultHeadR * 1.4;
+        const defaultBodyRy = defaultHeadR * 1.6;
+
         let userSumX = 0, userSumY = 0, userWeightSum = 0;
 
-        // Process each pixel: Motion Detection + Face/Body Zone + Skin Chrominance + Speed Heat Variation
+        // Process each pixel: Motion Detection + Human Spatial Zone + Accurate Skin Chrominance + Speed Heat Variation
         for (let y = 0; y < th; y++) {
           for (let x = 0; x < tw; x++) {
             const idx = y * tw + x;
@@ -809,7 +832,7 @@ document.addEventListener("DOMContentLoaded", () => {
             }
             const motionVal = motionHeatMap[idx];
 
-            // 3. Human Spatial Heat Zone (Detected Face/Body)
+            // 3. Human Spatial Heat Zone (Detected Face/Body OR Localized Center Fallback)
             let humanZoneVal = 0;
             if (hasFace) {
               const dxH = (x - headCx) / headR;
@@ -825,9 +848,24 @@ document.addEventListener("DOMContentLoaded", () => {
               if (distBody < 1.5) {
                 humanZoneVal = Math.max(humanZoneVal, 0.85 - distBody / 1.5);
               }
+            } else {
+              // Gentle localized center prior when face tracking is scanning
+              const dxH = (x - defaultHeadCx) / defaultHeadR;
+              const dyH = (y - defaultHeadCy) / defaultHeadR;
+              const distHead = dxH * dxH + dyH * dyH;
+              if (distHead < 1.2) {
+                humanZoneVal = Math.max(humanZoneVal, 0.35 * (1.0 - distHead / 1.2));
+              }
+
+              const dxB = (x - defaultBodyCx) / defaultBodyRx;
+              const dyB = (y - defaultBodyCy) / defaultBodyRy;
+              const distBody = dxB * dxB + dyB * dyB;
+              if (distBody < 1.4) {
+                humanZoneVal = Math.max(humanZoneVal, 0.25 * (1.0 - distBody / 1.4));
+              }
             }
 
-            // 4. Accurate Skin Chrominance Heuristic
+            // 4. Accurate Skin Chrominance Heuristic (prevents background room from triggering)
             const isSkin = (r > 80 && g > 50 && b > 35 && r > g && g > b && (r - g) > 12 && (r - b) > 18);
             const skinVal = isSkin ? 0.65 : 0;
 
@@ -841,23 +879,28 @@ document.addEventListener("DOMContentLoaded", () => {
               userWeightSum += activity;
             }
 
-            // 6. Dynamic Thermal Temperature Mapping (Purely based on real camera pixel luminance + speed)
+            // 6. Dynamic FLIR Ironbow Thermal Temperature Mapping:
             const normLum = lum / 255;
             
-            // Background is ALWAYS Cool Navy Blue / Deep Teal (LUT index 15 ~ 48)
-            const ambientBg = 15 + normLum * 33;
+            // Background is ALWAYS Cool Ocean Blue / Deep Cyan (LUT index 12 ~ 42)
+            const ambientBg = 12 + normLum * 30;
             
-            // Human subject base warmth at 0 km/h: Cool Teal / Indigo Violet (LUT index +35 ~ +65)
-            const baseHumanWarmth = activity * (35 + normLum * 30);
+            // Human subject base thermal radiation (Face/Head core is warmest, shoulders/torso transition smoothly)
+            const baseHumanWarmth = activity * (50 + normLum * 45);
 
-            // Dynamic Temperature Boost from Speed Slider:
-            const speedHeatBoost = activity * (speedHeatFactor * 135);
+            // Dynamic Heat Radiation Boost from Speed Slider:
+            const speedHeatBoost = activity * (speedHeatFactor * 125);
 
             let finalThermal = ambientBg + baseHumanWarmth + speedHeatBoost;
 
-            // Sensor noise on active human figure
-            if (activity > 0.1) {
-              finalThermal += (Math.random() - 0.5) * 3;
+            // Sensor micro-noise
+            if (activity > 0.05) {
+              finalThermal += (Math.random() - 0.5) * 2.5;
+            }
+
+            // Authentic FLIR horizontal sensor line grid texture
+            if (y % 2 === 0) {
+              finalThermal *= 0.95;
             }
 
             // Clamp to 0 ~ 255
@@ -879,36 +922,78 @@ document.addEventListener("DOMContentLoaded", () => {
 
         thermalCtx.putImageData(imgData, 0, 0);
 
-        // Draw back to main canvas with retro pixelated stretching
-        riderCtx.imageSmoothingEnabled = false;
-        riderCtx.drawImage(thermalCanvas, 0, 0, w, h);
       } else {
-        // Draw clean Standby UI with click-to-connect button prompt
-        riderCtx.fillStyle = "#040612";
-        riderCtx.fillRect(0, 0, w, h);
+        // --- Simulated Fallback Scene (When Camera is OFF) ---
+        // Ambient background (Cold Blue)
+        thermalCtx.fillStyle = "rgb(6, 8, 22)";
+        thermalCtx.fillRect(0, 0, tw, th);
 
-        const cx = w / 2;
-        const cy = h / 2;
+        // Faint background structures (Cold dark navy)
+        thermalCtx.fillStyle = "rgb(15, 20, 45)";
+        thermalCtx.fillRect(40, 30, 80, 70);
+        thermalCtx.fillRect(200, 40, 70, 80);
 
-        // Camera Icon & Button Prompt
-        riderCtx.fillStyle = "rgba(0, 229, 255, 0.15)";
-        riderCtx.beginPath();
-        riderCtx.arc(cx, cy - 15, 36, 0, 2 * Math.PI);
-        riderCtx.fill();
+        patrolX = (currentBoxX / 100) * tw;
+        patrolY = (currentBoxY / 100) * th;
 
-        riderCtx.strokeStyle = "#00e5ff";
-        riderCtx.lineWidth = 2;
-        riderCtx.stroke();
+        const effectiveHeatMultiplier = thermalHeatMultiplier + (currentResistance / 100) * 0.4;
+        const headRadius = 20 + speedHeatFactor * 12 * effectiveHeatMultiplier;
+        const torsoWidth = 44 + speedHeatFactor * 18 * effectiveHeatMultiplier;
+        const torsoHeight = 38 + speedHeatFactor * 10 * effectiveHeatMultiplier;
 
-        riderCtx.fillStyle = "#ffffff";
-        riderCtx.font = "600 15px 'Inter', -apple-system, sans-serif";
-        riderCtx.textAlign = "center";
-        riderCtx.fillText("📷 CLICK HERE TO START CAMERA", cx, cy + 40);
+        // Subject intensities: Cold when stopped (lum ~ 50), very hot red/bright when speed is high (lum ~ 180-245)
+        const baseCold = 45;
+        const torsoIntensity = Math.min(255, Math.round(baseCold + speedHeatFactor * 160 * effectiveHeatMultiplier));
+        const headIntensity = Math.min(255, Math.round(baseCold + speedHeatFactor * 185 * effectiveHeatMultiplier));
+        const faceIntensity = Math.min(255, Math.round(baseCold + speedHeatFactor * 195 * effectiveHeatMultiplier));
+        const eyeIntensity = Math.min(255, Math.round(baseCold + speedHeatFactor * 205 * effectiveHeatMultiplier));
 
-        riderCtx.fillStyle = "rgba(0, 229, 255, 0.7)";
-        riderCtx.font = "13px 'Inter', -apple-system, sans-serif";
-        riderCtx.fillText("화면을 클릭하면 웹캠 카메라가 연동됩니다", cx, cy + 64);
+        thermalCtx.filter = "blur(7px)";
+
+        // Torso
+        thermalCtx.fillStyle = `rgb(${torsoIntensity}, ${torsoIntensity}, ${torsoIntensity})`;
+        thermalCtx.beginPath();
+        thermalCtx.ellipse(patrolX, patrolY + 55, torsoWidth, torsoHeight, 0, 0, 2 * Math.PI);
+        thermalCtx.fill();
+
+        // Head
+        thermalCtx.fillStyle = `rgb(${headIntensity}, ${headIntensity}, ${headIntensity})`;
+        thermalCtx.beginPath();
+        thermalCtx.arc(patrolX, patrolY, headRadius, 0, 2 * Math.PI);
+        thermalCtx.fill();
+
+        // Face core
+        thermalCtx.fillStyle = `rgb(${faceIntensity}, ${faceIntensity}, ${faceIntensity})`;
+        thermalCtx.beginPath();
+        thermalCtx.ellipse(patrolX, patrolY, headRadius * 0.55, headRadius * 0.7, 0, 0, 2 * Math.PI);
+        thermalCtx.fill();
+
+        // Eyes & nose
+        thermalCtx.fillStyle = `rgb(${eyeIntensity}, ${eyeIntensity}, ${eyeIntensity})`;
+        thermalCtx.beginPath();
+        thermalCtx.arc(patrolX - (headRadius * 0.25), patrolY - (headRadius * 0.15), headRadius * 0.15, 0, 2 * Math.PI);
+        thermalCtx.arc(patrolX + (headRadius * 0.25), patrolY - (headRadius * 0.15), headRadius * 0.15, 0, 2 * Math.PI);
+        thermalCtx.arc(patrolX, patrolY + (headRadius * 0.1), headRadius * 0.1, 0, 2 * Math.PI);
+        thermalCtx.fill();
+
+        thermalCtx.filter = "none";
+
+        // Map simulated scene through thermal LUT
+        const simImg = thermalCtx.getImageData(0, 0, tw, th);
+        const simPixels = simImg.data;
+        for (let i = 0; i < simPixels.length; i += 4) {
+          const lum = simPixels[i];
+          const lutIdx = Math.max(0, Math.min(255, lum));
+          simPixels[i] = thermalLUT[lutIdx * 3];
+          simPixels[i + 1] = thermalLUT[lutIdx * 3 + 1];
+          simPixels[i + 2] = thermalLUT[lutIdx * 3 + 2];
+        }
+        thermalCtx.putImageData(simImg, 0, 0);
       }
+
+      // Draw back to main canvas with retro pixelated stretching
+      riderCtx.imageSmoothingEnabled = false;
+      riderCtx.drawImage(thermalCanvas, 0, 0, w, h);
 
       // Update dynamic HUD overlays
       updateThermalOverlayTracker();
@@ -922,33 +1007,40 @@ document.addEventListener("DOMContentLoaded", () => {
         riderCtx.filter = "contrast(1.12) brightness(1.05)";
       }
 
-      if (isVideoReady) {
+      if (cameraActive && videoFeed.srcObject && videoFeed.readyState === videoFeed.HAVE_ENOUGH_DATA) {
         riderCtx.imageSmoothingEnabled = true;
         riderCtx.drawImage(videoFeed, 0, 0, w, h);
       } else {
-        riderCtx.fillStyle = "#040612";
+        // MODERN VECTOR RADAR FALLBACK (Apple style light-grey minimalist circles)
+        riderCtx.fillStyle = "#121214";
         riderCtx.fillRect(0, 0, w, h);
-
+        
         const cx = w / 2;
         const cy = h / 2;
-
-        riderCtx.fillStyle = "rgba(0, 229, 255, 0.15)";
+        const radius = 90;
+        
+        riderCtx.strokeStyle = "rgba(255, 255, 255, 0.05)";
+        riderCtx.lineWidth = 1;
+        
+        // Multi scope circle bounds
+        for (let r = 1; r <= 3; r++) {
+          riderCtx.beginPath();
+          riderCtx.arc(cx, cy, radius * (r / 3), 0, 2 * Math.PI);
+          riderCtx.stroke();
+        }
+        
+        // Sweep radar line
+        const sweepAngle = (animationTime * 0.9) % (2 * Math.PI);
+        riderCtx.strokeStyle = "rgba(255, 255, 255, 0.15)";
         riderCtx.beginPath();
-        riderCtx.arc(cx, cy - 15, 36, 0, 2 * Math.PI);
-        riderCtx.fill();
-
-        riderCtx.strokeStyle = "#00e5ff";
-        riderCtx.lineWidth = 2;
+        riderCtx.moveTo(cx, cy);
+        riderCtx.lineTo(cx + Math.cos(sweepAngle) * radius, cy + Math.sin(sweepAngle) * radius);
         riderCtx.stroke();
-
-        riderCtx.fillStyle = "#ffffff";
-        riderCtx.font = "600 15px 'Inter', -apple-system, sans-serif";
-        riderCtx.textAlign = "center";
-        riderCtx.fillText("📷 CLICK HERE TO START CAMERA", cx, cy + 40);
-
-        riderCtx.fillStyle = "rgba(0, 229, 255, 0.7)";
-        riderCtx.font = "13px 'Inter', -apple-system, sans-serif";
-        riderCtx.fillText("상단 'Start Camera' 버튼이나 화면을 클릭하세요", cx, cy + 64);
+        
+        // Draw a subtle coordinates text inside fallback screen
+        riderCtx.fillStyle = "rgba(255, 255, 255, 0.2)";
+        riderCtx.font = "11px 'Inter'";
+        riderCtx.fillText("RADAR SENSOR ONLINE", cx - 60, cy - radius - 20);
       }
     }
   }
@@ -1679,19 +1771,16 @@ document.addEventListener("DOMContentLoaded", () => {
   mainLoopId = requestAnimationFrame(mainRenderLoop);
   startSnapshotTimer();
 
-  // --- Auto-start Webcam on Page Load for all protocols ---
-  setTimeout(() => {
-    console.log("[Raduga Telemetry] Auto-starting webcam...");
-    startWebcam();
-  }, 300);
-
-  // Click anywhere on main camera card to start/retry camera
-  if (mainMediaCard) {
-    mainMediaCard.style.cursor = "pointer";
-    mainMediaCard.addEventListener("click", () => {
-      if (!cameraActive) {
-        startWebcam();
-      }
-    });
+  // --- Auto-start Webcam in Server/TouchDesigner Context ---
+  const urlParams = new URLSearchParams(window.location.search);
+  const autoStart = urlParams.get('autostart') === 'true' || urlParams.get('td') === 'true';
+  const isServer = window.location.protocol !== "file:";
+  
+  // If ?autostart=true is set, or if running on local server, try to start the camera automatically
+  if ((autoStart || isServer) && window.location.protocol !== "file:") {
+    setTimeout(() => {
+      console.log("[Raduga Telemetry] Attempting to auto-start webcam for TouchDesigner/Web integration...");
+      startWebcam();
+    }, 800);
   }
 });
