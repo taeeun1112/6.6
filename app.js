@@ -986,9 +986,24 @@ document.addEventListener("DOMContentLoaded", () => {
         thermalCtx.putImageData(simImg, 0, 0);
       }
 
-      // Draw back to main canvas with retro pixelated stretching
-      riderCtx.imageSmoothingEnabled = false;
-      riderCtx.drawImage(thermalCanvas, 0, 0, w, h);
+      // Draw high-definition natural camera feed first (photo-friendly, clear face & eyes)
+      if (cameraActive && videoFeed.srcObject && videoFeed.readyState === videoFeed.HAVE_ENOUGH_DATA) {
+        riderCtx.filter = "contrast(1.08) brightness(1.04) saturate(1.1)";
+        riderCtx.imageSmoothingEnabled = true;
+        riderCtx.drawImage(videoFeed, 0, 0, w, h);
+        riderCtx.filter = "none";
+
+        // Layer glowing Thermal Sci-Fi Ironbow Heatmap on top
+        riderCtx.globalCompositeOperation = "screen";
+        riderCtx.globalAlpha = 0.55;
+        riderCtx.drawImage(thermalCanvas, 0, 0, w, h);
+        riderCtx.globalCompositeOperation = "source-over";
+        riderCtx.globalAlpha = 1.0;
+      } else {
+        // Fallback simulated scene when camera is off
+        riderCtx.imageSmoothingEnabled = false;
+        riderCtx.drawImage(thermalCanvas, 0, 0, w, h);
+      }
 
       // Update dynamic HUD overlays
       updateThermalOverlayTracker();
