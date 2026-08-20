@@ -539,36 +539,18 @@ document.addEventListener("DOMContentLoaded", () => {
       });
     }
 
-    // Try ideal high quality HD constraint first
+    // Standard video request first (guarantees compatibility across built-in & USB webcams)
     try {
       return await navigator.mediaDevices.getUserMedia({
-        video: {
-          width: { ideal: 1280, max: 1920 },
-          height: { ideal: 720, max: 1080 },
-          facingMode: "user"
-        },
+        video: true,
         audio: false
       });
     } catch (err) {
-      console.warn("High-res constraint failed, falling back to standard video constraint:", err);
-      // Fallback 1: Standard definition
-      try {
-        return await navigator.mediaDevices.getUserMedia({
-          video: {
-            width: { ideal: 640 },
-            height: { ideal: 480 },
-            facingMode: "user"
-          },
-          audio: false
-        });
-      } catch (err2) {
-        console.warn("Standard constraint failed, falling back to basic video:", err2);
-        // Fallback 2: Plain video
-        return await navigator.mediaDevices.getUserMedia({
-          video: true,
-          audio: false
-        });
-      }
+      console.warn("Basic video request failed, trying fallback HD constraints:", err);
+      return await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: false
+      });
     }
   }
 
@@ -577,18 +559,6 @@ document.addEventListener("DOMContentLoaded", () => {
     try {
       const stream = await requestUserCameraStream();
       videoFeed.srcObject = stream;
-
-      // Wait until video metadata is loaded and video is playing
-      await new Promise((resolve) => {
-        if (videoFeed.readyState >= 2) {
-          resolve();
-        } else {
-          videoFeed.onloadedmetadata = () => {
-            resolve();
-          };
-          setTimeout(resolve, 3000);
-        }
-      });
 
       try {
         await videoFeed.play();
@@ -601,8 +571,10 @@ document.addEventListener("DOMContentLoaded", () => {
         btnCameraPower.textContent = "Stop Camera";
         btnCameraPower.classList.add("active");
       }
-      gpsStatusBadge.textContent = "GPS LOCKED & STREAMING";
-      gpsStatusBadge.classList.add("active");
+      if (gpsStatusBadge) {
+        gpsStatusBadge.textContent = "GPS LOCKED & STREAMING";
+        gpsStatusBadge.classList.add("active");
+      }
 
       // Stream track ended handler (e.g. camera unplugged)
       stream.getVideoTracks().forEach(track => {
