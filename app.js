@@ -383,17 +383,47 @@ document.addEventListener("DOMContentLoaded", () => {
   let targetControllerHeatFactor = 0;
   let controllerHeatFactor = 0;
 
+  // Smooth lerp state for API slider position interpolation
+  let currentMappedSliderX = 0;
+  let currentMappedSliderY = 0;
+  let targetMappedSliderX = 0;
+  let targetMappedSliderY = 0;
+
+  // Re-interpret raw API X (0~5000) and Y (0~5000) into 3D Perspective Depth & Lateral Position
+  function reinterpretApiCoordinates() {
+    if (!apiActive || !apiData) return;
+
+    const rawX = typeof apiData.x === 'number' ? apiData.x : 2500;
+    const rawY = typeof apiData.y === 'number' ? apiData.y : 2500;
+
+    // 1. Normalize X to [-1.0, 1.0] center-relative
+    const normX = Math.max(-1, Math.min(1, (rawX - 2500) / 2500));
+    // 2. Normalize Y to [0.0, 1.0] (Depth along perspective road: 0 = horizon, 1 = foreground)
+    const normY = Math.max(0, Math.min(1, rawY / 5000));
+
+    // 3. Non-linear curved easing for natural perspective contraction
+    const easeX = Math.sign(normX) * Math.pow(Math.abs(normX), 0.85);
+    const easeY = Math.sign(normY - 0.5) * Math.pow(Math.abs(normY - 0.5) * 2, 0.85);
+
+    // 4. Perspective Width Expansion: Near horizon (normY=0) lateral spread narrows; near foreground (normY=1) expands
+    const perspectiveWidthFactor = 0.5 + 0.5 * normY;
+    
+    targetMappedSliderX = Math.max(-100, Math.min(100, Math.round(easeX * perspectiveWidthFactor * 100)));
+    targetMappedSliderY = Math.max(-100, Math.min(100, Math.round(easeY * 100)));
+  }
+
   function syncSlidersWithAPI() {
     if (apiActive && apiData) {
-      // Map API x & y (0~5000, center 2500) to slider range (-100~100)
-      const targetSliderX = Math.max(-100, Math.min(100, Math.round(((apiData.x - 2500) / 2500) * 100)));
-      const targetSliderY = Math.max(-100, Math.min(100, Math.round(((apiData.y - 2500) / 2500) * 100)));
+      reinterpretApiCoordinates();
+      // Smooth frame-by-frame Lerp interpolation (0.08 rate) for butter-smooth gliding
+      currentMappedSliderX = lerp(currentMappedSliderX, targetMappedSliderX, 0.08);
+      currentMappedSliderY = lerp(currentMappedSliderY, targetMappedSliderY, 0.08);
 
       if (ctrlXSlider) {
-        ctrlXSlider.value = targetSliderX;
+        ctrlXSlider.value = Math.round(currentMappedSliderX);
       }
       if (ctrlYSlider) {
-        ctrlYSlider.value = targetSliderY;
+        ctrlYSlider.value = Math.round(currentMappedSliderY);
       }
     }
   }
@@ -442,7 +472,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (controllerCoordsVal) {
       if (apiActive && apiData) {
-        controllerCoordsVal.textContent = `[API SYNC] X: ${apiData.x} (${rawX > 0 ? '+' : ''}${rawX}) | Y: ${apiData.y} (${rawY > 0 ? '+' : ''}${rawY}) | ROT: ${apiData.rotation ?? 0}°`;
+        const depthPct = typeof apiData.y === 'number' ? ((apiData.y / 5000) * 100).toFixed(1) : "50.0";
+        controllerCoordsVal.textContent = `[3D API SYNC] X: ${apiData.x} (${rawX > 0 ? '+' : ''}${rawX}) | Y: ${apiData.y} (${rawY > 0 ? '+' : ''}${rawY}) | DEPTH: ${depthPct}%`;
         controllerCoordsVal.style.color = "#30d158";
       } else {
         const isAuto = (rawX === 0 && rawY === 0);
@@ -453,7 +484,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     if (vhsCtrlStatus) {
       if (apiActive) {
-        vhsCtrlStatus.textContent = "RENDER API SYNC";
+        vhsCtrlStatus.textContent = "3D PERSPECTIVE SYNC";
       } else {
         const isAuto = (rawX === 0 && rawY === 0);
         vhsCtrlStatus.textContent = isAuto ? "AUTO FLOAT" : "MANUAL STEER";
