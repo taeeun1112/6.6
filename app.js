@@ -383,22 +383,30 @@ document.addEventListener("DOMContentLoaded", () => {
   let targetControllerHeatFactor = 0;
   let controllerHeatFactor = 0;
 
+  // Arduino-style map() function: map(x, in_min, in_max, out_min, out_max)
+  function arduinoMap(x, inMin, inMax, outMin, outMax) {
+    return (x - inMin) * (outMax - outMin) / (inMax - inMin) + outMin;
+  }
+
   // Smooth lerp state for API slider position interpolation
   let currentMappedSliderX = 0;
   let currentMappedSliderY = 0;
   let targetMappedSliderX = 0;
   let targetMappedSliderY = 0;
 
-  // Direct 1-to-1 linear mapping from raw API X (0~5000) and Y (0~5000) to slider range (-100~100)
+  // Direct 1-to-1 linear mapping using Arduino map(), constrained to 80% of visual box centered at origin
   function reinterpretApiCoordinates() {
     if (!apiActive || !apiData) return;
 
     const rawX = typeof apiData.x === 'number' ? apiData.x : 2500;
     const rawY = typeof apiData.y === 'number' ? apiData.y : 2500;
 
-    // Direct linear 1-to-1 mapping: 0 -> -100, 2500 -> 0, 5000 -> +100
-    targetMappedSliderX = Math.max(-100, Math.min(100, Math.round(((rawX - 2500) / 2500) * 100)));
-    targetMappedSliderY = Math.max(-100, Math.min(100, Math.round(((rawY - 2500) / 2500) * 100)));
+    // Arduino map(): 0~5000 mapped to -80~+80 (80% visual box limit around center 2500)
+    const mappedX = arduinoMap(rawX, 0, 5000, -80, 80);
+    const mappedY = arduinoMap(rawY, 0, 5000, -80, 80);
+
+    targetMappedSliderX = Math.max(-80, Math.min(80, Math.round(mappedX)));
+    targetMappedSliderY = Math.max(-80, Math.min(80, Math.round(mappedY)));
   }
 
   function syncSlidersWithAPI() {
@@ -452,7 +460,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const rawX = ctrlXSlider ? parseInt(ctrlXSlider.value) : 0;
     const rawY = ctrlYSlider ? parseInt(ctrlYSlider.value) : 0;
 
-    // Map -100 ~ 100 range to thermal canvas pixel offset
+    // Map -100 ~ 100 range to thermal canvas pixel offset (constrained to 80% boundary of visual box)
     targetUserOffsetX = (rawX / 100) * (thermalCanvas.width * 0.38);
     targetUserOffsetY = (rawY / 100) * (thermalCanvas.height * 0.28);
 
@@ -461,7 +469,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (controllerCoordsVal) {
       if (apiActive && apiData) {
-        controllerCoordsVal.textContent = `[API DIRECT SYNC] X: ${apiData.x} (${rawX > 0 ? '+' : ''}${rawX}) | Y: ${apiData.y} (${rawY > 0 ? '+' : ''}${rawY}) | ROT: ${apiData.rotation ?? 0}°`;
+        controllerCoordsVal.textContent = `[API MAP 80%] X: ${apiData.x} (${rawX > 0 ? '+' : ''}${rawX}) | Y: ${apiData.y} (${rawY > 0 ? '+' : ''}${rawY}) | ROT: ${apiData.rotation ?? 0}°`;
         controllerCoordsVal.style.color = "#30d158";
       } else {
         const isAuto = (rawX === 0 && rawY === 0);
@@ -472,7 +480,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     if (vhsCtrlStatus) {
       if (apiActive) {
-        vhsCtrlStatus.textContent = "API DIRECT SYNC";
+        vhsCtrlStatus.textContent = "API MAP 80% SYNC";
       } else {
         const isAuto = (rawX === 0 && rawY === 0);
         vhsCtrlStatus.textContent = isAuto ? "AUTO FLOAT" : "MANUAL STEER";
