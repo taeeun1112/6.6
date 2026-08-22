@@ -1094,11 +1094,15 @@ document.addEventListener("DOMContentLoaded", () => {
         userOffsetX = lerp(userOffsetX, targetUserOffsetX, 0.15);
         userOffsetY = lerp(userOffsetY, targetUserOffsetY, 0.15);
 
-        // Organic free floating base sway & bounce
-        const swayX = Math.sin(animationTime * 1.6) * (tw * 0.22) + Math.cos(animationTime * 0.7) * (tw * 0.1);
-        const bounceY = Math.sin(animationTime * 3.2) * 5 + Math.cos(animationTime * 1.1) * 3;
+        // Organic free floating base sway & bounce (ONLY active when API is offline and sliders are at center)
+        let swayX = 0;
+        let bounceY = 0;
+        if (!apiActive) {
+          swayX = Math.sin(animationTime * 1.6) * (tw * 0.22) + Math.cos(animationTime * 0.7) * (tw * 0.1);
+          bounceY = Math.sin(animationTime * 3.2) * 5 + Math.cos(animationTime * 1.1) * 3;
+        }
 
-        // Combine base floating motion + manual controller steering offset
+        // Combine base floating motion + controller steering offset
         patrolX = (tw * 0.5 + swayX) + userOffsetX;
         patrolY = (th * 0.40 + bounceY) + userOffsetY;
 
