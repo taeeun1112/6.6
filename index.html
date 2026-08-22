@@ -229,7 +229,22 @@
               <span class="lbl">OBJECT POSITION CONTROLLER</span>
               <span class="val" id="controller-coords-val">X: 0 | Y: 0 (AUTO FLOAT)</span>
             </div>
-            <div class="controller-dual-row" style="display: flex; gap: 16px; align-items: center; width: 100%; margin-top: 4px;">
+            
+            <!-- Live Raw Render API Data Feed Banner -->
+            <div class="api-raw-data-row" id="api-raw-data-row" style="display: flex; gap: 12px; align-items: center; background: rgba(0, 0, 0, 0.45); border: 1px solid rgba(48, 209, 88, 0.3); border-radius: 6px; padding: 6px 12px; margin-top: 6px; font-family: 'VT323', monospace; font-size: 14px; color: #30d158; text-shadow: 0 0 4px rgba(48, 209, 88, 0.3);">
+              <span style="color: #8e8e93; font-size: 12px; letter-spacing: 0.5px;">RENDER API RAW FEED:</span>
+              <span>X: <strong id="api-raw-x" style="color: #30d158; font-size: 15px;">--</strong></span>
+              <span style="color: rgba(255,255,255,0.2);">|</span>
+              <span>Y: <strong id="api-raw-y" style="color: #30d158; font-size: 15px;">--</strong></span>
+              <span style="color: rgba(255,255,255,0.2);">|</span>
+              <span>ROT: <strong id="api-raw-rot" style="color: #00e5ff;">--°</strong></span>
+              <span style="color: rgba(255,255,255,0.2);">|</span>
+              <span>ACT: <strong id="api-raw-act" style="color: #ff9f0a;">--</strong></span>
+              <span style="color: rgba(255,255,255,0.2);">|</span>
+              <span style="color: #8e8e93; font-size: 12px;" id="api-raw-time">WAITING...</span>
+            </div>
+
+            <div class="controller-dual-row" style="display: flex; gap: 16px; align-items: center; width: 100%; margin-top: 8px;">
               <!-- Horizontal X Axis Controller -->
               <div class="ctrl-sub-group" style="flex: 1; display: flex; align-items: center; gap: 8px;">
                 <span style="font-family: 'VT323', monospace; font-size: 14px; color: #00e5ff; min-width: 42px; text-shadow: 0 0 4px rgba(0, 229, 255, 0.4);">X-AXIS</span>

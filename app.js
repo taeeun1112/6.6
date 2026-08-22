@@ -398,10 +398,37 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  function updateRawApiDataDisplay() {
+    const apiRawX = document.getElementById("api-raw-x");
+    const apiRawY = document.getElementById("api-raw-y");
+    const apiRawRot = document.getElementById("api-raw-rot");
+    const apiRawAct = document.getElementById("api-raw-act");
+    const apiRawTime = document.getElementById("api-raw-time");
+
+    if (apiActive && apiData) {
+      if (apiRawX) apiRawX.textContent = typeof apiData.x === 'number' ? apiData.x.toFixed(2) : (apiData.x ?? "--");
+      if (apiRawY) apiRawY.textContent = typeof apiData.y === 'number' ? apiData.y.toFixed(2) : (apiData.y ?? "--");
+      if (apiRawRot) apiRawRot.textContent = `${apiData.rotation ?? 0}°`;
+      if (apiRawAct) apiRawAct.textContent = apiData.action ?? "--";
+      if (apiRawTime) {
+        const t = new Date();
+        const timeStr = `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}:${String(t.getSeconds()).padStart(2, '0')}`;
+        apiRawTime.textContent = `SYNC @ ${timeStr}`;
+      }
+    } else {
+      if (apiRawX) apiRawX.textContent = "--";
+      if (apiRawY) apiRawY.textContent = "--";
+      if (apiRawRot) apiRawRot.textContent = "--°";
+      if (apiRawAct) apiRawAct.textContent = "--";
+      if (apiRawTime) apiRawTime.textContent = "API OFFLINE";
+    }
+  }
+
   function updateObjectControllerUI() {
     if (apiActive && apiData) {
       syncSlidersWithAPI();
     }
+    updateRawApiDataDisplay();
 
     const rawX = ctrlXSlider ? parseInt(ctrlXSlider.value) : 0;
     const rawY = ctrlYSlider ? parseInt(ctrlYSlider.value) : 0;
@@ -421,7 +448,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const isAuto = (rawX === 0 && rawY === 0);
         const modeText = isAuto ? "(AUTO FLOAT)" : "(MANUAL STEER)";
         controllerCoordsVal.textContent = `X: ${rawX > 0 ? '+' : ''}${rawX} | Y: ${rawY > 0 ? '+' : ''}${rawY} ${modeText}`;
-        controllerCoordsVal.style.color = isAuto ? "#00e5ff" : "#ff3b30";
+        controllerCoordsVal.style.color = "#00e5ff";
       }
     }
     if (vhsCtrlStatus) {
