@@ -72,7 +72,7 @@ const server = http.createServer((req, res) => {
       <body>
         <h1>Raduga Mobility Control</h1>
         <div class="btn-container">
-          <a class="btn" href="/산학 6번 데이터:홈페이지/index.html?autostart=true">Open Screen 6 (Thermal telemetry)</a>
+          <a class="btn" href="/산학 6번 데이터:홈페이지/index.html">Open Screen 6 (Thermal telemetry)</a>
         </div>
       </body>
       </html>

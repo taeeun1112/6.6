@@ -18,6 +18,7 @@
     <div class="nav-center" style="display: flex; gap: 8px;">
       <span class="status-pill active" id="gps-status-badge">GPS LOCKED</span>
       <span class="status-pill" id="api-status-badge">API OFFLINE</span>
+      <span class="status-pill" id="camera-status-badge" style="background: rgba(255, 69, 58, 0.12); color: #ff453a; border: 1px solid rgba(255, 69, 58, 0.3);">CAM UNLINKED</span>
     </div>
     <div class="nav-right">
       <div class="rec-indicator" id="rec-indicator">
@@ -65,7 +66,7 @@
               <div class="vhs-top-row">
                 <div class="vhs-play-status">
                   <div class="play-indicator">PLAY <span class="vhs-play-arrow">▶</span></div>
-                  <div class="vhs-speed-telemetry">SPD <span id="hud-speed-val">45</span> KM/H</div>
+                  <div class="vhs-speed-telemetry">CTRL <span id="vhs-ctrl-status">AUTO FLOAT</span></div>
                 </div>
                 <div class="vhs-top-right-group">
                   <div class="vhs-captured-counter">CAP <span id="vhs-cap-counter">00000</span></div>
@@ -216,23 +217,37 @@
         </div><!-- /.camera-sub-deck -->
       </div><!-- /.screen-panel--live -->
 
-      <!-- Speed Slider below live feed -->
-      <div class="speed-slider-below">
+      <!-- Object Position Controller below live feed -->
+      <div class="speed-slider-below" id="object-controller-container">
         <!-- Glowing Dot Matrix Grid Background -->
         <div class="saving-dot-matrix"></div>
         
         <div class="slider-grid-wrap">
-          <!-- Left: Speed Slider -->
+          <!-- Object Position Controller -->
           <div class="slider-group">
             <div class="slider-header">
-              <span class="lbl">MOBILITY SPEED VALUE</span>
-              <span class="val" id="slider-speed-val">45 KM/H</span>
+              <span class="lbl">OBJECT POSITION CONTROLLER</span>
+              <span class="val" id="controller-coords-val">X: 0 | Y: 0 (AUTO FLOAT)</span>
             </div>
-            <div class="slider-track-wrap">
-              <input type="range" id="speed-slider" min="0" max="150" value="45" class="minimal-slider">
+            <div class="controller-dual-row" style="display: flex; gap: 16px; align-items: center; width: 100%; margin-top: 4px;">
+              <!-- Horizontal X Axis Controller -->
+              <div class="ctrl-sub-group" style="flex: 1; display: flex; align-items: center; gap: 8px;">
+                <span style="font-family: 'VT323', monospace; font-size: 14px; color: #00e5ff; min-width: 42px; text-shadow: 0 0 4px rgba(0, 229, 255, 0.4);">X-AXIS</span>
+                <input type="range" id="ctrl-x-slider" min="-100" max="100" value="0" class="minimal-slider">
+              </div>
+              
+              <!-- Vertical Y Axis Controller -->
+              <div class="ctrl-sub-group" style="flex: 1; display: flex; align-items: center; gap: 8px;">
+                <span style="font-family: 'VT323', monospace; font-size: 14px; color: #00e5ff; min-width: 42px; text-shadow: 0 0 4px rgba(0, 229, 255, 0.4);">Y-AXIS</span>
+                <input type="range" id="ctrl-y-slider" min="-100" max="100" value="0" class="minimal-slider">
+              </div>
+              
+              <!-- Reset Center Button -->
+              <button id="btn-ctrl-reset" style="background: rgba(0, 229, 255, 0.1); border: 1px solid rgba(0, 229, 255, 0.4); color: #00e5ff; font-family: 'VT323', monospace; font-size: 13px; padding: 3px 12px; border-radius: 4px; cursor: pointer; transition: all 0.2s ease; white-space: nowrap; outline: none;">
+                RESET CENTER
+              </button>
             </div>
           </div>
-          
         </div>
       </div><!-- /.speed-slider-below -->
 

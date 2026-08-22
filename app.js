@@ -321,16 +321,16 @@ document.addEventListener("DOMContentLoaded", () => {
     updateClock();
   }
 
-  // --- 2. Telemetry and Speed logic ---
+  // --- 2. Telemetry and Object Position Controller logic ---
   let isManualSpeedOverride = false;
   let manualSpeedTimer = null;
   let isDraggingSlider = false;
 
   function updateSpeedGauge(val, syncSlider = true) {
     currentSpeed = Math.max(0, Math.min(150, val));
-    hudSpeedVal.textContent = Math.round(currentSpeed);
-    sliderSpeedVal.textContent = `${Math.round(currentSpeed)} KM/H`;
-    if (syncSlider && !isDraggingSlider) {
+    if (hudSpeedVal) hudSpeedVal.textContent = Math.round(currentSpeed);
+    if (sliderSpeedVal) sliderSpeedVal.textContent = `${Math.round(currentSpeed)} KM/H`;
+    if (syncSlider && speedSlider && !isDraggingSlider) {
       speedSlider.value = Math.round(currentSpeed);
     }
     
@@ -340,42 +340,92 @@ document.addEventListener("DOMContentLoaded", () => {
     if (vFactorLbl) vFactorLbl.textContent = `V_FACTOR: ${factor}x`;
   }
 
-  // Linear Interpolation for smooth velocity changes
+  // Linear Interpolation for smooth movement easing
   function lerp(start, end, amt) {
     return (1 - amt) * start + amt * end;
   }
 
-  function handleSliderInput(e) {
-    isManualSpeedOverride = true;
-    isDraggingSlider = true;
-    if (autoDriveActive) {
-      autoDriveActive = false;
-      btnAutoPilot.classList.remove("active");
-    }
-    const val = parseFloat(e.target.value);
-    targetSpeed = val;
-    currentSpeed = val;
-    updateSpeedGauge(val, false);
-    
-    // Play light scroll clicking sound
-    if (Math.round(val) % 8 === 0) {
-      playHapticTap(1000 + val * 3, 0.015, 0.01);
-    }
+  // --- Object Position Controller State ---
+  const ctrlXSlider = document.getElementById("ctrl-x-slider");
+  const ctrlYSlider = document.getElementById("ctrl-y-slider");
+  const btnCtrlReset = document.getElementById("btn-ctrl-reset");
+  const controllerCoordsVal = document.getElementById("controller-coords-val");
+  const vhsCtrlStatus = document.getElementById("vhs-ctrl-status");
 
-    // Keep manual control active for 8 seconds after last interaction
-    clearTimeout(manualSpeedTimer);
-    manualSpeedTimer = setTimeout(() => {
-      isManualSpeedOverride = false;
-      isDraggingSlider = false;
-    }, 8000);
+  let targetUserOffsetX = 0;
+  let targetUserOffsetY = 0;
+  let userOffsetX = 0;
+  let userOffsetY = 0;
+
+  // Heat factor driven by how far the X/Y controller is pushed from center (0 = coldest, 1 = hottest)
+  let targetControllerHeatFactor = 0;
+  let controllerHeatFactor = 0;
+
+  function updateObjectControllerUI() {
+    const rawX = ctrlXSlider ? parseInt(ctrlXSlider.value) : 0;
+    const rawY = ctrlYSlider ? parseInt(ctrlYSlider.value) : 0;
+
+    // Map -100 ~ 100 range to thermal canvas pixel offset
+    targetUserOffsetX = (rawX / 100) * (thermalCanvas.width * 0.38);
+    targetUserOffsetY = (rawY / 100) * (thermalCanvas.height * 0.28);
+
+    // Distance from center (0~100), further push = hotter temperature reading & color
+    targetControllerHeatFactor = Math.min(1, Math.sqrt(rawX * rawX + rawY * rawY) / 141.42);
+
+    const isAuto = (rawX === 0 && rawY === 0);
+    const modeText = isAuto ? "(AUTO FLOAT)" : "(MANUAL STEER)";
+
+    if (controllerCoordsVal) {
+      controllerCoordsVal.textContent = `X: ${rawX > 0 ? '+' : ''}${rawX} | Y: ${rawY > 0 ? '+' : ''}${rawY} ${modeText}`;
+      controllerCoordsVal.style.color = isAuto ? "#00e5ff" : "#ff3b30";
+    }
+    if (vhsCtrlStatus) {
+      vhsCtrlStatus.textContent = isAuto ? "AUTO FLOAT" : "MANUAL STEER";
+    }
   }
 
-  speedSlider.addEventListener("input", handleSliderInput);
-  speedSlider.addEventListener("change", handleSliderInput);
-  speedSlider.addEventListener("mousedown", () => { isDraggingSlider = true; isManualSpeedOverride = true; });
-  speedSlider.addEventListener("mouseup", () => { isDraggingSlider = false; });
-  speedSlider.addEventListener("touchstart", () => { isDraggingSlider = true; isManualSpeedOverride = true; }, { passive: true });
-  speedSlider.addEventListener("touchend", () => { isDraggingSlider = false; });
+  if (ctrlXSlider) {
+    ctrlXSlider.addEventListener("input", () => {
+      playHapticTap(900 + Math.abs(parseInt(ctrlXSlider.value)), 0.015, 0.01);
+      updateObjectControllerUI();
+    });
+  }
+  if (ctrlYSlider) {
+    ctrlYSlider.addEventListener("input", () => {
+      playHapticTap(900 + Math.abs(parseInt(ctrlYSlider.value)), 0.015, 0.01);
+      updateObjectControllerUI();
+    });
+  }
+  if (btnCtrlReset) {
+    btnCtrlReset.addEventListener("click", () => {
+      playHapticTap(1200, 0.04, 0.02);
+      if (ctrlXSlider) ctrlXSlider.value = "0";
+      if (ctrlYSlider) ctrlYSlider.value = "0";
+      updateObjectControllerUI();
+    });
+  }
+
+  // Keyboard Arrow Keys support for smooth control
+  window.addEventListener("keydown", (e) => {
+    if (!ctrlXSlider || !ctrlYSlider) return;
+    // Only intercept if user is not typing in an input text field
+    if (e.target && (e.target.tagName === 'INPUT' && e.target.type === 'text')) return;
+
+    let step = 10;
+    if (e.key === "ArrowLeft") {
+      ctrlXSlider.value = Math.max(-100, parseInt(ctrlXSlider.value) - step);
+      updateObjectControllerUI();
+    } else if (e.key === "ArrowRight") {
+      ctrlXSlider.value = Math.min(100, parseInt(ctrlXSlider.value) + step);
+      updateObjectControllerUI();
+    } else if (e.key === "ArrowUp") {
+      ctrlYSlider.value = Math.max(-100, parseInt(ctrlYSlider.value) - step);
+      updateObjectControllerUI();
+    } else if (e.key === "ArrowDown") {
+      ctrlYSlider.value = Math.min(100, parseInt(ctrlYSlider.value) + step);
+      updateObjectControllerUI();
+    }
+  });
 
   function simulateTelemetry() {
     animationTime += 0.01;
@@ -604,6 +654,14 @@ document.addEventListener("DOMContentLoaded", () => {
       gpsStatusBadge.textContent = "GPS LOCKED & STREAMING";
       gpsStatusBadge.classList.add("active");
 
+      const cameraStatusBadge = document.getElementById("camera-status-badge");
+      if (cameraStatusBadge) {
+        cameraStatusBadge.textContent = "CAM LINKED";
+        cameraStatusBadge.style.background = "rgba(48, 209, 88, 0.15)";
+        cameraStatusBadge.style.color = "#30d158";
+        cameraStatusBadge.style.borderColor = "rgba(48, 209, 88, 0.3)";
+      }
+
       // Stream track ended handler (e.g. camera unplugged)
       stream.getVideoTracks().forEach(track => {
         track.onended = () => {
@@ -681,6 +739,14 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     gpsStatusBadge.textContent = "GPS LOCKED";
     gpsStatusBadge.classList.remove("active");
+
+    const cameraStatusBadge = document.getElementById("camera-status-badge");
+    if (cameraStatusBadge) {
+      cameraStatusBadge.textContent = "CAM UNLINKED";
+      cameraStatusBadge.style.background = "rgba(255, 69, 58, 0.12)";
+      cameraStatusBadge.style.color = "#ff453a";
+      cameraStatusBadge.style.borderColor = "rgba(255, 69, 58, 0.3)";
+    }
 
     // Stop face tracking
     if (trackerTask) {
@@ -764,8 +830,9 @@ document.addEventListener("DOMContentLoaded", () => {
     if (activeFilter === "THERMAL") {
       const tw = thermalCanvas.width;
       const th = thermalCanvas.height;
-      const speedRatio = Math.min(1.0, currentSpeed / 130);
-      const speedHeatFactor = Math.pow(speedRatio, 0.75); // Speed heat boost curve
+      // Ease the controller-driven heat factor once per frame; downstream color/temp code reuses it
+      controllerHeatFactor = lerp(controllerHeatFactor, targetControllerHeatFactor, 0.06);
+      const speedHeatFactor = Math.pow(controllerHeatFactor, 0.75); // Controller push heat boost curve
 
       if (cameraActive && videoFeed.srcObject && videoFeed.readyState === videoFeed.HAVE_ENOUGH_DATA) {
         // Draw current webcam frame to offscreen canvas
@@ -918,37 +985,104 @@ document.addEventListener("DOMContentLoaded", () => {
         thermalCtx.putImageData(imgData, 0, 0);
 
       } else {
-        // --- Simulated Fallback Scene (When Camera is OFF) ---
-        // Ambient background (Cold Blue)
-        thermalCtx.fillStyle = "rgb(6, 8, 22)";
+        // --- Real-Time Procedural Live Simulation Stream (When Camera is OFF) ---
+        // Smoothly interpolate user controller steering offset
+        userOffsetX = lerp(userOffsetX, targetUserOffsetX, 0.15);
+        userOffsetY = lerp(userOffsetY, targetUserOffsetY, 0.15);
+
+        // Organic free floating base sway & bounce
+        const swayX = Math.sin(animationTime * 1.6) * (tw * 0.22) + Math.cos(animationTime * 0.7) * (tw * 0.1);
+        const bounceY = Math.sin(animationTime * 3.2) * 5 + Math.cos(animationTime * 1.1) * 3;
+
+        // Combine base floating motion + manual controller steering offset
+        patrolX = (tw * 0.5 + swayX) + userOffsetX;
+        patrolY = (th * 0.40 + bounceY) + userOffsetY;
+
+        // Clamp inside thermal canvas boundary so floating object remains visible
+        patrolX = Math.max(tw * 0.1, Math.min(tw * 0.9, patrolX));
+        patrolY = Math.max(th * 0.15, Math.min(th * 0.85, patrolY));
+
+        const horizY = th * 0.35;
+
+        // 1. Dark cold space ambient background
+        thermalCtx.fillStyle = "rgb(4, 6, 18)";
         thermalCtx.fillRect(0, 0, tw, th);
 
-        // Faint background structures (Cold dark navy)
-        thermalCtx.fillStyle = "rgb(15, 20, 45)";
-        thermalCtx.fillRect(40, 30, 80, 70);
-        thermalCtx.fillRect(200, 40, 70, 80);
+        // 2. Dynamic 3D scrolling road perspective
+        thermalCtx.fillStyle = "rgb(12, 16, 38)";
+        thermalCtx.beginPath();
+        thermalCtx.moveTo(tw * 0.42, horizY);
+        thermalCtx.lineTo(tw * 0.58, horizY);
+        thermalCtx.lineTo(tw * 0.95, th);
+        thermalCtx.lineTo(tw * 0.05, th);
+        thermalCtx.closePath();
+        thermalCtx.fill();
 
-        patrolX = (currentBoxX / 100) * tw;
-        patrolY = (currentBoxY / 100) * th;
+        // Moving road markers
+        const speedFactor = Math.max(0.2, currentSpeed / 30);
+        const roadOffset = (animationTime * 45 * speedFactor) % 30;
 
+        thermalCtx.strokeStyle = "rgb(50, 70, 120)";
+        thermalCtx.lineWidth = 1.5;
+        for (let d = 0; d < 8; d++) {
+          const progress = (d * 12 + roadOffset) / 96;
+          if (progress < 0 || progress > 1) continue;
+          const ly = horizY + progress * (th - horizY);
+          const lx1 = tw * 0.5 - progress * (tw * 0.05);
+          const lx2 = tw * 0.5 + progress * (tw * 0.05);
+          thermalCtx.beginPath();
+          thermalCtx.moveTo(lx1, ly);
+          thermalCtx.lineTo(lx2, ly);
+          thermalCtx.stroke();
+        }
+
+        // 3. Passing roadside thermal structures (Poles & Trees)
+        const poleProgress1 = (animationTime * 0.6 * speedFactor) % 1;
+        const poleProgress2 = ((animationTime * 0.6 * speedFactor) + 0.5) % 1;
+
+        [poleProgress1, poleProgress2].forEach(prog => {
+          const py = horizY + prog * (th - horizY);
+          const pw = 4 + prog * 16;
+          const ph = 8 + prog * 35;
+          const heatLum = Math.round(30 + prog * 100);
+
+          // Left roadside structure
+          const pxLeft = (tw * 0.42) - prog * (tw * 0.38) - pw;
+          thermalCtx.fillStyle = `rgb(${heatLum}, ${Math.round(heatLum * 0.5)}, ${Math.round(heatLum * 0.8)})`;
+          thermalCtx.fillRect(pxLeft, py - ph, pw, ph);
+
+          // Right roadside structure
+          const pxRight = (tw * 0.58) + prog * (tw * 0.38);
+          thermalCtx.fillStyle = `rgb(${heatLum}, ${Math.round(heatLum * 0.5)}, ${Math.round(heatLum * 0.8)})`;
+          thermalCtx.fillRect(pxRight, py - ph, pw, ph);
+        });
+
+        // 4. Moving Rider Heat Signature (Head, Torso, Engine & Friction Wheels)
         const effectiveHeatMultiplier = thermalHeatMultiplier + (currentResistance / 100) * 0.4;
-        const headRadius = 20 + speedHeatFactor * 12 * effectiveHeatMultiplier;
-        const torsoWidth = 44 + speedHeatFactor * 18 * effectiveHeatMultiplier;
-        const torsoHeight = 38 + speedHeatFactor * 10 * effectiveHeatMultiplier;
+        const headRadius = 14 + speedHeatFactor * 8 * effectiveHeatMultiplier;
+        const torsoWidth = 28 + speedHeatFactor * 12 * effectiveHeatMultiplier;
+        const torsoHeight = 24 + speedHeatFactor * 8 * effectiveHeatMultiplier;
 
-        // Subject intensities: Cold when stopped (lum ~ 50), very hot red/bright when speed is high (lum ~ 180-245)
         const baseCold = 45;
         const torsoIntensity = Math.min(255, Math.round(baseCold + speedHeatFactor * 160 * effectiveHeatMultiplier));
         const headIntensity = Math.min(255, Math.round(baseCold + speedHeatFactor * 185 * effectiveHeatMultiplier));
-        const faceIntensity = Math.min(255, Math.round(baseCold + speedHeatFactor * 195 * effectiveHeatMultiplier));
-        const eyeIntensity = Math.min(255, Math.round(baseCold + speedHeatFactor * 205 * effectiveHeatMultiplier));
+        const faceIntensity = Math.min(255, Math.round(baseCold + speedHeatFactor * 205 * effectiveHeatMultiplier));
+        const wheelIntensity = Math.min(255, Math.round(80 + speedHeatFactor * 170 * effectiveHeatMultiplier));
 
-        thermalCtx.filter = "blur(7px)";
+        thermalCtx.filter = "blur(5px)";
+
+        // Wheels & motor friction heat
+        const wheelOffset = 18;
+        thermalCtx.fillStyle = `rgb(${wheelIntensity}, ${Math.round(wheelIntensity * 0.8)}, ${Math.round(wheelIntensity * 0.4)})`;
+        thermalCtx.beginPath();
+        thermalCtx.arc(patrolX - wheelOffset, patrolY + 38, 10 + speedHeatFactor * 4, 0, 2 * Math.PI);
+        thermalCtx.arc(patrolX + wheelOffset, patrolY + 38, 10 + speedHeatFactor * 4, 0, 2 * Math.PI);
+        thermalCtx.fill();
 
         // Torso
         thermalCtx.fillStyle = `rgb(${torsoIntensity}, ${torsoIntensity}, ${torsoIntensity})`;
         thermalCtx.beginPath();
-        thermalCtx.ellipse(patrolX, patrolY + 55, torsoWidth, torsoHeight, 0, 0, 2 * Math.PI);
+        thermalCtx.ellipse(patrolX, patrolY + 22, torsoWidth, torsoHeight, 0, 0, 2 * Math.PI);
         thermalCtx.fill();
 
         // Head
@@ -961,14 +1095,6 @@ document.addEventListener("DOMContentLoaded", () => {
         thermalCtx.fillStyle = `rgb(${faceIntensity}, ${faceIntensity}, ${faceIntensity})`;
         thermalCtx.beginPath();
         thermalCtx.ellipse(patrolX, patrolY, headRadius * 0.55, headRadius * 0.7, 0, 0, 2 * Math.PI);
-        thermalCtx.fill();
-
-        // Eyes & nose
-        thermalCtx.fillStyle = `rgb(${eyeIntensity}, ${eyeIntensity}, ${eyeIntensity})`;
-        thermalCtx.beginPath();
-        thermalCtx.arc(patrolX - (headRadius * 0.25), patrolY - (headRadius * 0.15), headRadius * 0.15, 0, 2 * Math.PI);
-        thermalCtx.arc(patrolX + (headRadius * 0.25), patrolY - (headRadius * 0.15), headRadius * 0.15, 0, 2 * Math.PI);
-        thermalCtx.arc(patrolX, patrolY + (headRadius * 0.1), headRadius * 0.1, 0, 2 * Math.PI);
         thermalCtx.fill();
 
         thermalCtx.filter = "none";
@@ -1021,36 +1147,64 @@ document.addEventListener("DOMContentLoaded", () => {
         riderCtx.imageSmoothingEnabled = true;
         riderCtx.drawImage(videoFeed, 0, 0, w, h);
       } else {
-        // MODERN VECTOR RADAR FALLBACK (Apple style light-grey minimalist circles)
-        riderCtx.fillStyle = "#121214";
+        // REAL-TIME PROCEDURAL HUD STREAM (Cinematic / Grayscale / Standard Raw Fallback)
+        riderCtx.fillStyle = "#0a0c14";
         riderCtx.fillRect(0, 0, w, h);
-        
-        const cx = w / 2;
-        const cy = h / 2;
-        const radius = 90;
-        
-        riderCtx.strokeStyle = "rgba(255, 255, 255, 0.05)";
+
+        const horizY = h * 0.38;
+        const rx = (patrolX / thermalCanvas.width) * w;
+        const ry = (patrolY / thermalCanvas.height) * h;
+
+        // Draw 3D road perspective grid lines
+        const speedFactor = Math.max(0.2, currentSpeed / 30);
+        const gridOffset = (animationTime * 120 * speedFactor) % 40;
+
+        riderCtx.strokeStyle = activeFilter === "CINEMATIC" ? "rgba(0, 229, 255, 0.18)" : (activeFilter === "GRAYSCALE" ? "rgba(255, 255, 255, 0.15)" : "rgba(0, 229, 255, 0.25)");
         riderCtx.lineWidth = 1;
-        
-        // Multi scope circle bounds
-        for (let r = 1; r <= 3; r++) {
+
+        // Perspective side borders
+        riderCtx.beginPath();
+        riderCtx.moveTo(w * 0.42, horizY); riderCtx.lineTo(w * 0.02, h);
+        riderCtx.moveTo(w * 0.58, horizY); riderCtx.lineTo(w * 0.98, h);
+        riderCtx.stroke();
+
+        // Horizontal road grid lines
+        for (let yPos = horizY; yPos < h; yPos += 18) {
+          const gridY = yPos + (gridOffset * (yPos - horizY) / h);
+          if (gridY >= h) continue;
           riderCtx.beginPath();
-          riderCtx.arc(cx, cy, radius * (r / 3), 0, 2 * Math.PI);
+          riderCtx.moveTo(0, gridY);
+          riderCtx.lineTo(w, gridY);
           riderCtx.stroke();
         }
-        
-        // Sweep radar line
-        const sweepAngle = (animationTime * 0.9) % (2 * Math.PI);
-        riderCtx.strokeStyle = "rgba(255, 255, 255, 0.15)";
+
+        // Draw real-time moving rider silhouette and HUD reticle
+        riderCtx.fillStyle = activeFilter === "CINEMATIC" ? "#00e5ff" : (activeFilter === "GRAYSCALE" ? "#ffffff" : "#00ffcc");
+        riderCtx.shadowColor = riderCtx.fillStyle;
+        riderCtx.shadowBlur = 10;
+
+        // Vehicle / rider marker
         riderCtx.beginPath();
-        riderCtx.moveTo(cx, cy);
-        riderCtx.lineTo(cx + Math.cos(sweepAngle) * radius, cy + Math.sin(sweepAngle) * radius);
-        riderCtx.stroke();
-        
-        // Draw a subtle coordinates text inside fallback screen
-        riderCtx.fillStyle = "rgba(255, 255, 255, 0.2)";
-        riderCtx.font = "11px 'Inter'";
-        riderCtx.fillText("RADAR SENSOR ONLINE", cx - 60, cy - radius - 20);
+        riderCtx.arc(rx, ry + 15, 12, 0, 2 * Math.PI);
+        riderCtx.fill();
+
+        // Rider head
+        riderCtx.beginPath();
+        riderCtx.arc(rx, ry - 10, 8, 0, 2 * Math.PI);
+        riderCtx.fill();
+        riderCtx.shadowBlur = 0;
+
+        // Speed motion particles streaming past
+        riderCtx.strokeStyle = activeFilter === "CINEMATIC" ? "rgba(255, 45, 85, 0.6)" : "rgba(255, 255, 255, 0.4)";
+        for (let p = 0; p < 6; p++) {
+          const pProgress = ((animationTime * 2.5 * speedFactor) + p * 0.16) % 1;
+          const px = (w * 0.1) + p * (w * 0.16);
+          const py = horizY + pProgress * (h - horizY);
+          riderCtx.beginPath();
+          riderCtx.moveTo(px, py);
+          riderCtx.lineTo(px, py + 12 * speedFactor);
+          riderCtx.stroke();
+        }
       }
     }
   }
@@ -1058,9 +1212,8 @@ document.addEventListener("DOMContentLoaded", () => {
   function updateThermalOverlayTracker() {
     if (activeFilter !== "THERMAL") return;
     
-    // 1. Dynamic temperature value based on speed and multiplier
-    const speedRatio = Math.min(1.0, currentSpeed / 130);
-    const speedHeatFactor = Math.pow(speedRatio, 0.75);
+    // 1. Dynamic temperature value based on the X/Y controller push distance from center
+    const speedHeatFactor = Math.pow(controllerHeatFactor, 0.75);
 
     const baseTemp = 24.5;
     const maxCeiling = (maxScaleTemp && !isNaN(maxScaleTemp)) ? maxScaleTemp : 80;
@@ -1083,7 +1236,7 @@ document.addEventListener("DOMContentLoaded", () => {
       thermalYVal.textContent = `y-${Math.round(gpsCoords.y)}`;
     }
 
-    // 2. Position tracking coordinates (using actual webcam face detection or fallback telemetry)
+    // 2. Position tracking coordinates (using actual webcam face detection or fallback real-time simulation)
     let targetBoxX, targetBoxY;
     if (cameraActive && smoothFace.active && smoothFace.width > 0) {
       const vw = videoFeed.videoWidth || videoFeed.clientWidth || 1280;
@@ -1099,8 +1252,9 @@ document.addEventListener("DOMContentLoaded", () => {
       targetBoxX = detectedUserCenter.x;
       targetBoxY = detectedUserCenter.y;
     } else {
-      targetBoxX = 50;
-      targetBoxY = 40;
+      // Real-time tracking of the simulated moving subject!
+      targetBoxX = (patrolX / thermalCanvas.width) * 100;
+      targetBoxY = (patrolY / thermalCanvas.height) * 100;
     }
     
     // Apply fast interpolation/easing to make target tracking box follow person in real time
@@ -1788,16 +1942,14 @@ document.addEventListener("DOMContentLoaded", () => {
   mainLoopId = requestAnimationFrame(mainRenderLoop);
   startSnapshotTimer();
 
-  // --- Auto-start Webcam in Server/TouchDesigner Context ---
-  const urlParams = new URLSearchParams(window.location.search);
-  const autoStart = urlParams.get('autostart') === 'true' || urlParams.get('td') === 'true';
-  const isServer = window.location.protocol !== "file:";
-  
-  // If ?autostart=true is set, or if running on local server, try to start the camera automatically
-  if ((autoStart || isServer) && window.location.protocol !== "file:") {
-    setTimeout(() => {
-      console.log("[Raduga Telemetry] Attempting to auto-start webcam for TouchDesigner/Web integration...");
-      startWebcam();
-    }, 800);
+  // --- Camera Integration Status: Explicitly Unlinked ---
+  stopWebcam();
+  console.log("[Raduga Telemetry] Camera integration unlinked. Operating in procedural simulation mode.");
+  const cameraStatusBadge = document.getElementById("camera-status-badge");
+  if (cameraStatusBadge) {
+    cameraStatusBadge.textContent = "CAM UNLINKED";
+    cameraStatusBadge.style.background = "rgba(255, 69, 58, 0.12)";
+    cameraStatusBadge.style.color = "#ff453a";
+    cameraStatusBadge.style.borderColor = "rgba(255, 69, 58, 0.3)";
   }
 });
