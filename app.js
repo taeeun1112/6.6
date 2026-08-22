@@ -412,9 +412,9 @@ document.addEventListener("DOMContentLoaded", () => {
   function syncSlidersWithAPI() {
     if (apiActive && apiData) {
       reinterpretApiCoordinates();
-      // Smooth frame-by-frame Lerp gliding (0.12 rate for fast, direct responsiveness)
-      currentMappedSliderX = lerp(currentMappedSliderX, targetMappedSliderX, 0.12);
-      currentMappedSliderY = lerp(currentMappedSliderY, targetMappedSliderY, 0.12);
+      // Fast, responsive Lerp interpolation (0.45 rate for crisp, prominent responsiveness)
+      currentMappedSliderX = lerp(currentMappedSliderX, targetMappedSliderX, 0.45);
+      currentMappedSliderY = lerp(currentMappedSliderY, targetMappedSliderY, 0.45);
 
       if (ctrlXSlider) {
         ctrlXSlider.value = Math.round(currentMappedSliderX);
@@ -460,9 +460,9 @@ document.addEventListener("DOMContentLoaded", () => {
     const rawX = ctrlXSlider ? parseInt(ctrlXSlider.value) : 0;
     const rawY = ctrlYSlider ? parseInt(ctrlYSlider.value) : 0;
 
-    // Map -100 ~ 100 range to thermal canvas pixel offset (constrained to 80% boundary of visual box)
-    targetUserOffsetX = (rawX / 100) * (thermalCanvas.width * 0.38);
-    targetUserOffsetY = (rawY / 100) * (thermalCanvas.height * 0.28);
+    // Map -100 ~ 100 range to thermal canvas pixel offset (Expanded travel range: 85% width / 70% height for dramatic visual feedback)
+    targetUserOffsetX = (rawX / 100) * (thermalCanvas.width * 0.85);
+    targetUserOffsetY = (rawY / 100) * (thermalCanvas.height * 0.70);
 
     // Distance from center (0~100), further push = hotter temperature reading & color
     targetControllerHeatFactor = Math.min(1, Math.sqrt(rawX * rawX + rawY * rawY) / 141.42);
@@ -1090,9 +1090,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
       } else {
         // --- Real-Time Procedural Live Simulation Stream (When Camera is OFF) ---
-        // Smoothly interpolate user controller steering offset
-        userOffsetX = lerp(userOffsetX, targetUserOffsetX, 0.15);
-        userOffsetY = lerp(userOffsetY, targetUserOffsetY, 0.15);
+        // Smoothly interpolate user controller steering offset (Fast, responsive 0.40 rate)
+        userOffsetX = lerp(userOffsetX, targetUserOffsetX, 0.40);
+        userOffsetY = lerp(userOffsetY, targetUserOffsetY, 0.40);
 
         // Organic free floating base sway & bounce (ONLY active when API is offline and sliders are at center)
         let swayX = 0;
@@ -1366,8 +1366,8 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     
     // Apply fast interpolation/easing to make target tracking box follow person in real time
-    currentBoxX = lerp(currentBoxX, targetBoxX, 0.25);
-    currentBoxY = lerp(currentBoxY, targetBoxY, 0.25);
+    currentBoxX = lerp(currentBoxX, targetBoxX, 0.40);
+    currentBoxY = lerp(currentBoxY, targetBoxY, 0.40);
     
     if (thermalFaceBox) {
       thermalFaceBox.style.left = `${currentBoxX}%`;
