@@ -265,25 +265,38 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // --- API Connection ---
-  function updateApiStatusBadge(active) {
+  // --- API Connection (Render API) ---
+  function updateApiStatusBadge(status) {
     const apiStatusBadge = document.getElementById("api-status-badge");
     if (apiStatusBadge) {
-      if (active) {
-        apiStatusBadge.textContent = "API ACTIVE";
+      if (status === true || status === "active") {
+        apiStatusBadge.textContent = "API ACTIVE (RENDER)";
         apiStatusBadge.className = "status-pill active-success";
+        apiStatusBadge.style.background = "rgba(48, 209, 88, 0.15)";
+        apiStatusBadge.style.color = "#30d158";
+        apiStatusBadge.style.borderColor = "rgba(48, 209, 88, 0.4)";
+      } else if (status === "connecting") {
+        apiStatusBadge.textContent = "CONNECTING...";
+        apiStatusBadge.className = "status-pill";
+        apiStatusBadge.style.background = "rgba(255, 159, 10, 0.15)";
+        apiStatusBadge.style.color = "#ff9f0a";
+        apiStatusBadge.style.borderColor = "rgba(255, 159, 10, 0.4)";
       } else {
         apiStatusBadge.textContent = "API OFFLINE";
         apiStatusBadge.className = "status-pill";
+        apiStatusBadge.style.background = "rgba(255, 255, 255, 0.08)";
+        apiStatusBadge.style.color = "#8e8e93";
+        apiStatusBadge.style.borderColor = "rgba(255, 255, 255, 0.15)";
       }
     }
-  }
+  }  function pollPositionAPI() {
+    const RENDER_API_URL = "https://position-api-generator.onrender.com/api/state";
+    updateApiStatusBadge("connecting");
 
-  function pollPositionAPI() {
-    setInterval(() => {
-      fetch("https://position-api-generator.onrender.com/api/state")
+    function fetchRenderAPI() {
+      fetch(RENDER_API_URL)
         .then(res => {
-          if (!res.ok) throw new Error("API response not ok");
+          if (!res.ok) throw new Error(`HTTP Error ${res.status}`);
           return res.json();
         })
         .then(data => {
@@ -291,7 +304,10 @@ document.addEventListener("DOMContentLoaded", () => {
             apiData = data;
             apiActive = true;
             apiFailureCount = 0;
-            updateApiStatusBadge(true);
+            updateApiStatusBadge("active");
+            if (typeof updateObjectControllerUI === "function") {
+              updateObjectControllerUI();
+            }
           } else {
             throw new Error("Invalid API data format");
           }
@@ -301,12 +317,18 @@ document.addEventListener("DOMContentLoaded", () => {
           if (apiFailureCount >= 3) {
             apiActive = false;
             updateApiStatusBadge(false);
+            if (typeof updateObjectControllerUI === "function") {
+              updateObjectControllerUI();
+            }
           }
         });
-    }, 2000);
+    }
+
+    // Run immediate fetch on startup (handles initial load without waiting 2s)
+    fetchRenderAPI();
+    // Poll every 2 seconds
+    setInterval(fetchRenderAPI, 2000);
   }
-
-
 
   // --- 1. Top Bar Clock ---
   function startClock() {
@@ -361,7 +383,26 @@ document.addEventListener("DOMContentLoaded", () => {
   let targetControllerHeatFactor = 0;
   let controllerHeatFactor = 0;
 
+  function syncSlidersWithAPI() {
+    if (apiActive && apiData) {
+      // Map API x & y (0~5000, center 2500) to slider range (-100~100)
+      const targetSliderX = Math.max(-100, Math.min(100, Math.round(((apiData.x - 2500) / 2500) * 100)));
+      const targetSliderY = Math.max(-100, Math.min(100, Math.round(((apiData.y - 2500) / 2500) * 100)));
+
+      if (ctrlXSlider) {
+        ctrlXSlider.value = targetSliderX;
+      }
+      if (ctrlYSlider) {
+        ctrlYSlider.value = targetSliderY;
+      }
+    }
+  }
+
   function updateObjectControllerUI() {
+    if (apiActive && apiData) {
+      syncSlidersWithAPI();
+    }
+
     const rawX = ctrlXSlider ? parseInt(ctrlXSlider.value) : 0;
     const rawY = ctrlYSlider ? parseInt(ctrlYSlider.value) : 0;
 
@@ -372,15 +413,24 @@ document.addEventListener("DOMContentLoaded", () => {
     // Distance from center (0~100), further push = hotter temperature reading & color
     targetControllerHeatFactor = Math.min(1, Math.sqrt(rawX * rawX + rawY * rawY) / 141.42);
 
-    const isAuto = (rawX === 0 && rawY === 0);
-    const modeText = isAuto ? "(AUTO FLOAT)" : "(MANUAL STEER)";
-
     if (controllerCoordsVal) {
-      controllerCoordsVal.textContent = `X: ${rawX > 0 ? '+' : ''}${rawX} | Y: ${rawY > 0 ? '+' : ''}${rawY} ${modeText}`;
-      controllerCoordsVal.style.color = isAuto ? "#00e5ff" : "#ff3b30";
+      if (apiActive && apiData) {
+        controllerCoordsVal.textContent = `[API SYNC] X: ${apiData.x} (${rawX > 0 ? '+' : ''}${rawX}) | Y: ${apiData.y} (${rawY > 0 ? '+' : ''}${rawY}) | ROT: ${apiData.rotation ?? 0}°`;
+        controllerCoordsVal.style.color = "#30d158";
+      } else {
+        const isAuto = (rawX === 0 && rawY === 0);
+        const modeText = isAuto ? "(AUTO FLOAT)" : "(MANUAL STEER)";
+        controllerCoordsVal.textContent = `X: ${rawX > 0 ? '+' : ''}${rawX} | Y: ${rawY > 0 ? '+' : ''}${rawY} ${modeText}`;
+        controllerCoordsVal.style.color = isAuto ? "#00e5ff" : "#ff3b30";
+      }
     }
     if (vhsCtrlStatus) {
-      vhsCtrlStatus.textContent = isAuto ? "AUTO FLOAT" : "MANUAL STEER";
+      if (apiActive) {
+        vhsCtrlStatus.textContent = "RENDER API SYNC";
+      } else {
+        const isAuto = (rawX === 0 && rawY === 0);
+        vhsCtrlStatus.textContent = isAuto ? "AUTO FLOAT" : "MANUAL STEER";
+      }
     }
   }
 
