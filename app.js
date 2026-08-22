@@ -1090,24 +1090,33 @@ document.addEventListener("DOMContentLoaded", () => {
 
       } else {
         // --- Real-Time Procedural Live Simulation Stream (When Camera is OFF) ---
-        // Smoothly interpolate user controller steering offset (Fast, responsive 0.40 rate)
-        userOffsetX = lerp(userOffsetX, targetUserOffsetX, 0.40);
-        userOffsetY = lerp(userOffsetY, targetUserOffsetY, 0.40);
+        if (apiActive && apiData) {
+          const rawX = typeof apiData.x === 'number' ? apiData.x : 2500;
+          const rawY = typeof apiData.y === 'number' ? apiData.y : 2500;
 
-        // Organic free floating base sway & bounce (ONLY active when API is offline and sliders are at center)
-        let swayX = 0;
-        let bounceY = 0;
-        if (!apiActive) {
-          swayX = Math.sin(animationTime * 1.6) * (tw * 0.22) + Math.cos(animationTime * 0.7) * (tw * 0.1);
-          bounceY = Math.sin(animationTime * 3.2) * 5 + Math.cos(animationTime * 1.1) * 3;
+          // Direct 2D X/Y Axis Steering from API server data using Arduino map()
+          // API X (0~5000) -> Canvas X (10% ~ 90% width)
+          // API Y (0~5000) -> Canvas Y (15% ~ 85% height)
+          const targetX = arduinoMap(rawX, 0, 5000, tw * 0.10, tw * 0.90);
+          const targetY = arduinoMap(rawY, 0, 5000, th * 0.15, th * 0.85);
+
+          patrolX = lerp(patrolX, targetX, 0.45);
+          patrolY = lerp(patrolY, targetY, 0.45);
+        } else {
+          // Smoothly interpolate user controller steering offset (Fast, responsive 0.40 rate)
+          userOffsetX = lerp(userOffsetX, targetUserOffsetX, 0.40);
+          userOffsetY = lerp(userOffsetY, targetUserOffsetY, 0.40);
+
+          // Organic free floating base sway & bounce (ONLY active when API is offline and sliders are at center)
+          const swayX = Math.sin(animationTime * 1.6) * (tw * 0.22) + Math.cos(animationTime * 0.7) * (tw * 0.1);
+          const bounceY = Math.sin(animationTime * 3.2) * 5 + Math.cos(animationTime * 1.1) * 3;
+
+          patrolX = (tw * 0.5 + swayX) + userOffsetX;
+          patrolY = (th * 0.40 + bounceY) + userOffsetY;
         }
 
-        // Combine base floating motion + controller steering offset
-        patrolX = (tw * 0.5 + swayX) + userOffsetX;
-        patrolY = (th * 0.40 + bounceY) + userOffsetY;
-
         // Clamp inside thermal canvas boundary so floating object remains visible
-        patrolX = Math.max(tw * 0.1, Math.min(tw * 0.9, patrolX));
+        patrolX = Math.max(tw * 0.10, Math.min(tw * 0.90, patrolX));
         patrolY = Math.max(th * 0.15, Math.min(th * 0.85, patrolY));
 
         const horizY = th * 0.35;
@@ -1372,6 +1381,11 @@ document.addEventListener("DOMContentLoaded", () => {
     if (thermalFaceBox) {
       thermalFaceBox.style.left = `${currentBoxX}%`;
       thermalFaceBox.style.top = `${currentBoxY}%`;
+      if (apiActive && apiData && typeof apiData.rotation === 'number') {
+        thermalFaceBox.style.transform = `translate(-50%, -50%) rotate(${apiData.rotation}deg)`;
+      } else {
+        thermalFaceBox.style.transform = `translate(-50%, -50%)`;
+      }
       if (smoothFace.active && smoothFace.width > 0) {
         const vw = videoFeed.videoWidth || 1280;
         const bw = Math.max(100, Math.min(220, (smoothFace.width / vw) * 100 * 2.2));
