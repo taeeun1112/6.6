@@ -1,4 +1,5 @@
 const http = require('http');
+const https = require('https');
 const fs = require('fs');
 const path = require('path');
 
@@ -22,6 +23,24 @@ const MIME_TYPES = {
 const server = http.createServer((req, res) => {
   // Decode URL to handle Korean directory names properly and strip query parameters
   let reqPath = decodeURIComponent(req.url).split('?')[0];
+
+  // Server-side CORS Proxy Route for Render API
+  if (reqPath === '/api/proxy-state') {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    https.get("https://position-api-generator.onrender.com/api/state", (apiRes) => {
+      let body = '';
+      apiRes.on('data', chunk => body += chunk);
+      apiRes.on('end', () => {
+        res.writeHead(200);
+        res.end(body);
+      });
+    }).on('error', (err) => {
+      res.writeHead(500);
+      res.end(JSON.stringify({ error: err.message }));
+    });
+    return;
+  }
   
   // If base route is requested, provide a landing page
   if (reqPath === '/' || reqPath === '/index.html') {

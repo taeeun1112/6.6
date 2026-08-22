@@ -291,7 +291,30 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }  function pollPositionAPI() {
     const RENDER_API_URL = "https://position-api-generator.onrender.com/api/state";
+    const PROXY_API_URL = "/api/proxy-state";
     updateApiStatusBadge("connecting");
+
+    function processPayload(data) {
+      if (data && typeof data.x === 'number' && typeof data.y === 'number') {
+        apiData = data;
+        apiActive = true;
+        apiFailureCount = 0;
+
+        // Capture start trajectory state for smooth zero-jump transition
+        apiLastFetchTime = performance.now();
+        apiStartCanvasX = patrolX;
+        apiStartCanvasY = patrolY;
+        apiStartSliderX = currentMappedSliderX;
+        apiStartSliderY = currentMappedSliderY;
+
+        updateApiStatusBadge("active");
+        if (typeof updateObjectControllerUI === "function") {
+          updateObjectControllerUI();
+        }
+        return true;
+      }
+      return false;
+    }
 
     function fetchRenderAPI() {
       fetch(RENDER_API_URL)
@@ -300,35 +323,25 @@ document.addEventListener("DOMContentLoaded", () => {
           return res.json();
         })
         .then(data => {
-          if (data && typeof data.x === 'number' && typeof data.y === 'number') {
-            apiData = data;
-            apiActive = true;
-            apiFailureCount = 0;
-
-            // Capture start trajectory state for smooth zero-jump transition
-            apiLastFetchTime = performance.now();
-            apiStartCanvasX = patrolX;
-            apiStartCanvasY = patrolY;
-            apiStartSliderX = currentMappedSliderX;
-            apiStartSliderY = currentMappedSliderY;
-
-            updateApiStatusBadge("active");
-            if (typeof updateObjectControllerUI === "function") {
-              updateObjectControllerUI();
-            }
-          } else {
-            throw new Error("Invalid API data format");
-          }
+          if (!processPayload(data)) throw new Error("Invalid API data format");
         })
-        .catch(err => {
-          apiFailureCount++;
-          if (apiFailureCount >= 3) {
-            apiActive = false;
-            updateApiStatusBadge(false);
-            if (typeof updateObjectControllerUI === "function") {
-              updateObjectControllerUI();
-            }
-          }
+        .catch(() => {
+          // Try local proxy route if direct fetch fails (e.g. CORS or local security restriction)
+          fetch(PROXY_API_URL)
+            .then(res => res.json())
+            .then(data => {
+              if (!processPayload(data)) throw new Error("Invalid Proxy payload");
+            })
+            .catch(err => {
+              apiFailureCount++;
+              if (apiFailureCount >= 3) {
+                apiActive = false;
+                updateApiStatusBadge(false);
+                if (typeof updateObjectControllerUI === "function") {
+                  updateObjectControllerUI();
+                }
+              }
+            });
         });
     }
 
