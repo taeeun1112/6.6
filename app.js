@@ -449,10 +449,24 @@ document.addEventListener("DOMContentLoaded", () => {
       currentMappedSliderX = apiStartSliderX + (targetMappedSliderX - apiStartSliderX) * smoothT;
       currentMappedSliderY = apiStartSliderY + (targetMappedSliderY - apiStartSliderY) * smoothT;
 
-      if (ctrlXSlider) {
+      if (ctrlXSlider && !isDraggingSlider) {
         ctrlXSlider.value = Math.round(currentMappedSliderX);
       }
-      if (ctrlYSlider) {
+      if (ctrlYSlider && !isDraggingSlider) {
+        ctrlYSlider.value = Math.round(currentMappedSliderY);
+      }
+    } else if (!isManualSpeedOverride) {
+      // Automatic organic slider float when API is offline and not manually dragged
+      const autoSliderX = Math.round(Math.sin(animationTime * 1.6) * 55 + Math.cos(animationTime * 0.7) * 20);
+      const autoSliderY = Math.round(Math.cos(animationTime * 1.3) * 45 + Math.sin(animationTime * 0.9) * 15);
+
+      currentMappedSliderX = lerp(currentMappedSliderX, autoSliderX, 0.05);
+      currentMappedSliderY = lerp(currentMappedSliderY, autoSliderY, 0.05);
+
+      if (ctrlXSlider && !isDraggingSlider) {
+        ctrlXSlider.value = Math.round(currentMappedSliderX);
+      }
+      if (ctrlYSlider && !isDraggingSlider) {
         ctrlYSlider.value = Math.round(currentMappedSliderY);
       }
     }
@@ -485,9 +499,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function updateObjectControllerUI() {
-    if (apiActive && apiData) {
-      syncSlidersWithAPI();
-    }
+    syncSlidersWithAPI();
     updateRawApiDataDisplay();
 
     const rawX = ctrlXSlider ? parseInt(ctrlXSlider.value) : 0;
@@ -1288,8 +1300,11 @@ document.addEventListener("DOMContentLoaded", () => {
         riderCtx.drawImage(thermalCanvas, 0, 0, w, h);
       }
 
-      // Update dynamic HUD overlays
+      // Update dynamic HUD overlays & Object Controller sliders on every frame
       updateThermalOverlayTracker();
+      if (typeof updateObjectControllerUI === "function") {
+        updateObjectControllerUI();
+      }
     } else {
       // Apply filters directly to canvas context with enhanced clarity for human subject
       if (activeFilter === "CINEMATIC") {
