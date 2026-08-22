@@ -1327,20 +1327,27 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  // Automatic High-Contrast Thermal Fluctuation State
+  let autoContrastTargetTemp = 36.5;
+  let autoContrastCurrentTemp = 36.5;
+  let lastAutoTempShiftTime = 0;
+  const highContrastTempPool = [24.5, 84.8, 32.0, 92.4, 28.6, 76.5, 39.8, 96.2, 26.4, 88.0];
+  let contrastPoolIndex = 0;
+
   function updateThermalOverlayTracker() {
     if (activeFilter !== "THERMAL") return;
     
-    // 1. Dynamic temperature value based on the X/Y controller push distance from center
-    const speedHeatFactor = Math.pow(controllerHeatFactor, 0.75);
+    // Automatic High-Contrast Random Temperature Shifter (Switches check points with maximum contrast every ~1.8s)
+    const now = performance.now();
+    if (now - lastAutoTempShiftTime > 1800) {
+      lastAutoTempShiftTime = now;
+      contrastPoolIndex = (contrastPoolIndex + 1 + Math.floor(Math.random() * (highContrastTempPool.length - 1))) % highContrastTempPool.length;
+      autoContrastTargetTemp = highContrastTempPool[contrastPoolIndex];
+    }
 
-    const baseTemp = 24.5;
-    const maxCeiling = (maxScaleTemp && !isNaN(maxScaleTemp)) ? maxScaleTemp : 80;
-    const dynamicRange = maxCeiling - baseTemp;
-
-    const fluctuation = Math.sin(animationTime * 2.2) * 0.3;
-    const noise = (Math.random() - 0.5) * 0.1;
-    let currentTemp = baseTemp + (speedHeatFactor * dynamicRange) + fluctuation + noise;
-    currentTemp = Math.max(20.0, Math.min(maxCeiling + 5, currentTemp));
+    // Ultra-smooth lerp transition for continuous temperature & color shifting
+    autoContrastCurrentTemp = lerp(autoContrastCurrentTemp, autoContrastTargetTemp, 0.045);
+    const currentTemp = autoContrastCurrentTemp;
     
     if (thermalTempVal) {
       thermalTempVal.textContent = currentTemp.toFixed(1);
@@ -1379,12 +1386,12 @@ document.addEventListener("DOMContentLoaded", () => {
     currentBoxX = lerp(currentBoxX, targetBoxX, 0.045);
     currentBoxY = lerp(currentBoxY, targetBoxY, 0.045);
 
-    // FLIR Thermal Color Spectrum Mapper
+    // FLIR Thermal High-Contrast Color Spectrum Mapper
     function getThermalThemeColor(temp) {
-      if (temp < 32.0) return "#00e5ff";      // Cool Cyan / Indigo Blue
-      if (temp < 44.0) return "#30d158";      // Emerald Green
-      if (temp < 58.0) return "#ff9f0a";      // Blaze Orange
-      if (temp < 72.0) return "#ff3b30";      // Fiery Crimson Red
+      if (temp < 33.0) return "#00e5ff";      // Cool Electric Cyan / Indigo Blue
+      if (temp < 46.0) return "#30d158";      // Neon Emerald Green
+      if (temp < 62.0) return "#ff9f0a";      // Blaze Orange
+      if (temp < 78.0) return "#ff3b30";      // Fiery Crimson Red
       return "#ffcc00";                       // White-Hot Core Yellow
     }
 
@@ -1394,27 +1401,29 @@ document.addEventListener("DOMContentLoaded", () => {
       thermalFaceBox.style.left = `${currentBoxX}%`;
       thermalFaceBox.style.top = `${currentBoxY}%`;
       
-      // Dynamic Size Scaling based on Distance/Depth & Temperature (75px ~ 165px)
-      const tempRatio = Math.max(0, Math.min(1, (currentTemp - 20) / 60));
-      const depthYRatio = (currentBoxY / 100);
-      const dynamicReticleSize = Math.round(75 + tempRatio * 45 + depthYRatio * 45);
+      // Dynamic High-Contrast Size Scaling (Dramatic scaling from 65px when cold up to 215px when hot!)
+      const tempRatio = Math.max(0, Math.min(1, (currentTemp - 20) / 75));
+      const dynamicReticleSize = Math.round(65 + tempRatio * 150);
       
       thermalFaceBox.style.width = `${dynamicReticleSize}px`;
       thermalFaceBox.style.height = `${dynamicReticleSize}px`;
       thermalFaceBox.style.borderColor = dynamicThemeColor;
-      thermalFaceBox.style.boxShadow = `0 0 16px ${dynamicThemeColor}, inset 0 0 10px ${dynamicThemeColor}`;
+      thermalFaceBox.style.boxShadow = `0 0 20px ${dynamicThemeColor}, inset 0 0 12px ${dynamicThemeColor}`;
 
-      // Dynamic Color applied to corner reticle brackets
+      // Dynamic High-Contrast Sizing & Color applied to corner reticle brackets
+      const bracketSize = Math.round(12 + tempRatio * 14); // 12px -> 26px
       const brackets = thermalFaceBox.querySelectorAll('.target-bracket');
       brackets.forEach(b => {
+        b.style.width = `${bracketSize}px`;
+        b.style.height = `${bracketSize}px`;
         b.style.borderColor = dynamicThemeColor;
-        b.style.filter = `drop-shadow(0 0 6px ${dynamicThemeColor})`;
+        b.style.filter = `drop-shadow(0 0 8px ${dynamicThemeColor})`;
       });
 
       // Dynamic Color applied to Temperature Readout text
       if (thermalTempVal) {
         thermalTempVal.style.color = dynamicThemeColor;
-        thermalTempVal.style.textShadow = `0 0 8px ${dynamicThemeColor}`;
+        thermalTempVal.style.textShadow = `0 0 12px ${dynamicThemeColor}`;
       }
 
       if (apiActive && apiData && typeof apiData.rotation === 'number') {
