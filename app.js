@@ -412,9 +412,9 @@ document.addEventListener("DOMContentLoaded", () => {
   function syncSlidersWithAPI() {
     if (apiActive && apiData) {
       reinterpretApiCoordinates();
-      // Fast, responsive Lerp interpolation (0.45 rate for crisp, prominent responsiveness)
-      currentMappedSliderX = lerp(currentMappedSliderX, targetMappedSliderX, 0.45);
-      currentMappedSliderY = lerp(currentMappedSliderY, targetMappedSliderY, 0.45);
+      // Continuous, fluid Lerp gliding (0.07 rate) across 2-second polling window for butter-smooth motion
+      currentMappedSliderX = lerp(currentMappedSliderX, targetMappedSliderX, 0.07);
+      currentMappedSliderY = lerp(currentMappedSliderY, targetMappedSliderY, 0.07);
 
       if (ctrlXSlider) {
         ctrlXSlider.value = Math.round(currentMappedSliderX);
@@ -1095,13 +1095,14 @@ document.addEventListener("DOMContentLoaded", () => {
           const rawY = typeof apiData.y === 'number' ? apiData.y : 2500;
 
           // Direct 2D X/Y Axis Steering from API server data using Arduino map()
-          // API X (0~5000) -> Canvas X (10% ~ 90% width)
-          // API Y (0~5000) -> Canvas Y (15% ~ 85% height)
           const targetX = arduinoMap(rawX, 0, 5000, tw * 0.10, tw * 0.90);
           const targetY = arduinoMap(rawY, 0, 5000, th * 0.15, th * 0.85);
 
-          patrolX = lerp(patrolX, targetX, 0.45);
-          patrolY = lerp(patrolY, targetY, 0.45);
+          // Continuous, fluid Lerp gliding (0.07 rate) + subtle organic micro-drift easing
+          const microSwayX = Math.sin(animationTime * 1.5) * 1.2;
+          const microSwayY = Math.cos(animationTime * 1.8) * 1.0;
+          patrolX = lerp(patrolX, targetX, 0.07) + microSwayX;
+          patrolY = lerp(patrolY, targetY, 0.07) + microSwayY;
         } else {
           // Smoothly interpolate user controller steering offset (Fast, responsive 0.40 rate)
           userOffsetX = lerp(userOffsetX, targetUserOffsetX, 0.40);
@@ -1374,9 +1375,9 @@ document.addEventListener("DOMContentLoaded", () => {
       targetBoxY = (patrolY / thermalCanvas.height) * 100;
     }
     
-    // Apply fast interpolation/easing to make target tracking box follow person in real time
-    currentBoxX = lerp(currentBoxX, targetBoxX, 0.40);
-    currentBoxY = lerp(currentBoxY, targetBoxY, 0.40);
+    // Continuous, fluid interpolation (0.07 rate) across 2-second polling window for butter-smooth target box tracking
+    currentBoxX = lerp(currentBoxX, targetBoxX, 0.07);
+    currentBoxY = lerp(currentBoxY, targetBoxY, 0.07);
     
     if (thermalFaceBox) {
       thermalFaceBox.style.left = `${currentBoxX}%`;
