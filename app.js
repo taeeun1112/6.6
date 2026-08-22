@@ -1330,17 +1330,19 @@ document.addEventListener("DOMContentLoaded", () => {
   function updateThermalOverlayTracker() {
     if (activeFilter !== "THERMAL") return;
     
-    // 1. Dynamic temperature value based on the X/Y controller push distance from center
+    // 1. Organic Automatic Temperature & Size Pulsing (Breathes continuously even without manual control)
+    const autoHeatPulse = 0.5 + 0.38 * Math.sin(animationTime * 1.4) + 0.12 * Math.cos(animationTime * 2.8);
     const speedHeatFactor = Math.pow(controllerHeatFactor, 0.75);
+    const totalHeatFactor = Math.max(0, Math.min(1, autoHeatPulse * 0.75 + speedHeatFactor * 0.25));
 
-    const baseTemp = 24.5;
+    const baseTemp = 30.0;
     const maxCeiling = (maxScaleTemp && !isNaN(maxScaleTemp)) ? maxScaleTemp : 80;
     const dynamicRange = maxCeiling - baseTemp;
 
-    const fluctuation = Math.sin(animationTime * 2.2) * 0.3;
-    const noise = (Math.random() - 0.5) * 0.1;
-    let currentTemp = baseTemp + (speedHeatFactor * dynamicRange) + fluctuation + noise;
-    currentTemp = Math.max(20.0, Math.min(maxCeiling + 5, currentTemp));
+    const fluctuation = Math.sin(animationTime * 3.2) * 0.7;
+    const noise = (Math.random() - 0.5) * 0.3;
+    let currentTemp = baseTemp + (totalHeatFactor * dynamicRange) + fluctuation + noise;
+    currentTemp = Math.max(26.0, Math.min(maxCeiling + 2, currentTemp));
     
     if (thermalTempVal) {
       thermalTempVal.textContent = currentTemp.toFixed(1);
@@ -1381,9 +1383,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // FLIR Thermal Color Spectrum Mapper
     function getThermalThemeColor(temp) {
-      if (temp < 32.0) return "#00e5ff";      // Cool Cyan / Indigo Blue
-      if (temp < 44.0) return "#30d158";      // Emerald Green
-      if (temp < 58.0) return "#ff9f0a";      // Blaze Orange
+      if (temp < 36.0) return "#00e5ff";      // Cool Cyan / Indigo Blue
+      if (temp < 48.0) return "#30d158";      // Emerald Green
+      if (temp < 60.0) return "#ff9f0a";      // Blaze Orange
       if (temp < 72.0) return "#ff3b30";      // Fiery Crimson Red
       return "#ffcc00";                       // White-Hot Core Yellow
     }
@@ -1397,33 +1399,35 @@ document.addEventListener("DOMContentLoaded", () => {
       // Keep Neon HUD reticle perfectly upright without rotation
       thermalFaceBox.style.transform = `translate(-50%, -50%)`;
       
-      // Dynamic Size Scaling based on Distance/Depth & Temperature (75px ~ 165px)
-      const tempRatio = Math.max(0, Math.min(1, (currentTemp - 20) / 60));
+      // Dynamic Size Scaling: Organic Automatic Breathing Pulse + Temperature & Depth (85px ~ 175px)
+      const sizePulse = Math.sin(animationTime * 1.8) * 18;
+      const tempRatio = Math.max(0, Math.min(1, (currentTemp - 26) / 54));
       const depthYRatio = (currentBoxY / 100);
-      const dynamicReticleSize = Math.round(75 + tempRatio * 45 + depthYRatio * 45);
+      const dynamicReticleSize = Math.round(85 + tempRatio * 45 + depthYRatio * 25 + sizePulse);
       
       thermalFaceBox.style.width = `${dynamicReticleSize}px`;
       thermalFaceBox.style.height = `${dynamicReticleSize}px`;
       thermalFaceBox.style.borderColor = dynamicThemeColor;
-      thermalFaceBox.style.boxShadow = `0 0 16px ${dynamicThemeColor}, inset 0 0 10px ${dynamicThemeColor}`;
+      thermalFaceBox.style.boxShadow = `0 0 18px ${dynamicThemeColor}, inset 0 0 12px ${dynamicThemeColor}`;
 
       // Dynamic Color applied to corner reticle brackets
       const brackets = thermalFaceBox.querySelectorAll('.target-bracket');
       brackets.forEach(b => {
         b.style.borderColor = dynamicThemeColor;
-        b.style.filter = `drop-shadow(0 0 6px ${dynamicThemeColor})`;
+        b.style.filter = `drop-shadow(0 0 8px ${dynamicThemeColor})`;
       });
 
       // Dynamic Color applied to Temperature Readout text
       if (thermalTempVal) {
         thermalTempVal.style.color = dynamicThemeColor;
-        thermalTempVal.style.textShadow = `0 0 8px ${dynamicThemeColor}`;
+        thermalTempVal.style.textShadow = `0 0 10px ${dynamicThemeColor}`;
       }
     }
 
     // Dynamic Scale Indicator follows the speed-mapped temperature if not being dragged
     if (scaleIndicator && !isDraggingScale) {
-      const topPct = (1 - speedHeatFactor) * 100;
+      const tempNormalized = Math.max(0, Math.min(1, (currentTemp - 26) / 54));
+      const topPct = (1 - tempNormalized) * 100;
       scaleIndicator.style.top = `${topPct}%`;
     }
 
