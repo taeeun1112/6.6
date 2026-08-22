@@ -412,9 +412,9 @@ document.addEventListener("DOMContentLoaded", () => {
   function syncSlidersWithAPI() {
     if (apiActive && apiData) {
       reinterpretApiCoordinates();
-      // Continuous, fluid Lerp gliding (0.07 rate) across 2-second polling window for butter-smooth motion
-      currentMappedSliderX = lerp(currentMappedSliderX, targetMappedSliderX, 0.07);
-      currentMappedSliderY = lerp(currentMappedSliderY, targetMappedSliderY, 0.07);
+      // Ultra-smooth silky Lerp gliding (0.045 rate) across 2-second polling window
+      currentMappedSliderX = lerp(currentMappedSliderX, targetMappedSliderX, 0.045);
+      currentMappedSliderY = lerp(currentMappedSliderY, targetMappedSliderY, 0.045);
 
       if (ctrlXSlider) {
         ctrlXSlider.value = Math.round(currentMappedSliderX);
@@ -1098,11 +1098,11 @@ document.addEventListener("DOMContentLoaded", () => {
           const targetX = arduinoMap(rawX, 0, 5000, tw * 0.10, tw * 0.90);
           const targetY = arduinoMap(rawY, 0, 5000, th * 0.15, th * 0.85);
 
-          // Continuous, fluid Lerp gliding (0.07 rate) + subtle organic micro-drift easing
-          const microSwayX = Math.sin(animationTime * 1.5) * 1.2;
-          const microSwayY = Math.cos(animationTime * 1.8) * 1.0;
-          patrolX = lerp(patrolX, targetX, 0.07) + microSwayX;
-          patrolY = lerp(patrolY, targetY, 0.07) + microSwayY;
+          // Ultra-smooth silky Lerp gliding (0.045 rate) + subtle organic micro-drift easing
+          const microSwayX = Math.sin(animationTime * 1.5) * 1.0;
+          const microSwayY = Math.cos(animationTime * 1.8) * 0.8;
+          patrolX = lerp(patrolX, targetX, 0.045) + microSwayX;
+          patrolY = lerp(patrolY, targetY, 0.045) + microSwayY;
         } else {
           // Smoothly interpolate user controller steering offset (Fast, responsive 0.40 rate)
           userOffsetX = lerp(userOffsetX, targetUserOffsetX, 0.40);
@@ -1375,23 +1375,52 @@ document.addEventListener("DOMContentLoaded", () => {
       targetBoxY = (patrolY / thermalCanvas.height) * 100;
     }
     
-    // Continuous, fluid interpolation (0.07 rate) across 2-second polling window for butter-smooth target box tracking
-    currentBoxX = lerp(currentBoxX, targetBoxX, 0.07);
-    currentBoxY = lerp(currentBoxY, targetBoxY, 0.07);
-    
+    // Continuous, silky smooth Lerp interpolation (0.045 rate) for zero-stutter 60FPS target box tracking
+    currentBoxX = lerp(currentBoxX, targetBoxX, 0.045);
+    currentBoxY = lerp(currentBoxY, targetBoxY, 0.045);
+
+    // FLIR Thermal Color Spectrum Mapper
+    function getThermalThemeColor(temp) {
+      if (temp < 32.0) return "#00e5ff";      // Cool Cyan / Indigo Blue
+      if (temp < 44.0) return "#30d158";      // Emerald Green
+      if (temp < 58.0) return "#ff9f0a";      // Blaze Orange
+      if (temp < 72.0) return "#ff3b30";      // Fiery Crimson Red
+      return "#ffcc00";                       // White-Hot Core Yellow
+    }
+
+    const dynamicThemeColor = getThermalThemeColor(currentTemp);
+
     if (thermalFaceBox) {
       thermalFaceBox.style.left = `${currentBoxX}%`;
       thermalFaceBox.style.top = `${currentBoxY}%`;
+      
+      // Dynamic Size Scaling based on Distance/Depth & Temperature (75px ~ 165px)
+      const tempRatio = Math.max(0, Math.min(1, (currentTemp - 20) / 60));
+      const depthYRatio = (currentBoxY / 100);
+      const dynamicReticleSize = Math.round(75 + tempRatio * 45 + depthYRatio * 45);
+      
+      thermalFaceBox.style.width = `${dynamicReticleSize}px`;
+      thermalFaceBox.style.height = `${dynamicReticleSize}px`;
+      thermalFaceBox.style.borderColor = dynamicThemeColor;
+      thermalFaceBox.style.boxShadow = `0 0 16px ${dynamicThemeColor}, inset 0 0 10px ${dynamicThemeColor}`;
+
+      // Dynamic Color applied to corner reticle brackets
+      const brackets = thermalFaceBox.querySelectorAll('.target-bracket');
+      brackets.forEach(b => {
+        b.style.borderColor = dynamicThemeColor;
+        b.style.filter = `drop-shadow(0 0 6px ${dynamicThemeColor})`;
+      });
+
+      // Dynamic Color applied to Temperature Readout text
+      if (thermalTempVal) {
+        thermalTempVal.style.color = dynamicThemeColor;
+        thermalTempVal.style.textShadow = `0 0 8px ${dynamicThemeColor}`;
+      }
+
       if (apiActive && apiData && typeof apiData.rotation === 'number') {
         thermalFaceBox.style.transform = `translate(-50%, -50%) rotate(${apiData.rotation}deg)`;
       } else {
         thermalFaceBox.style.transform = `translate(-50%, -50%)`;
-      }
-      if (smoothFace.active && smoothFace.width > 0) {
-        const vw = videoFeed.videoWidth || 1280;
-        const bw = Math.max(100, Math.min(220, (smoothFace.width / vw) * 100 * 2.2));
-        thermalFaceBox.style.width = `${bw}%`;
-        thermalFaceBox.style.height = `${bw * 1.15}%`;
       }
     }
 
