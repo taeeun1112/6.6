@@ -304,6 +304,14 @@ document.addEventListener("DOMContentLoaded", () => {
             apiData = data;
             apiActive = true;
             apiFailureCount = 0;
+
+            // Capture start trajectory state for smooth zero-jump transition
+            apiLastFetchTime = performance.now();
+            apiStartCanvasX = patrolX;
+            apiStartCanvasY = patrolY;
+            apiStartSliderX = currentMappedSliderX;
+            apiStartSliderY = currentMappedSliderY;
+
             updateApiStatusBadge("active");
             if (typeof updateObjectControllerUI === "function") {
               updateObjectControllerUI();
@@ -388,9 +396,15 @@ document.addEventListener("DOMContentLoaded", () => {
     return (x - inMin) * (outMax - outMin) / (inMax - inMin) + outMin;
   }
 
-  // Smooth lerp state for API slider position interpolation
+  // Smooth time-aware trajectory state for 60FPS continuous gliding interpolation
+  let apiLastFetchTime = 0;
+  let apiStartCanvasX = 0;
+  let apiStartCanvasY = 0;
+
   let currentMappedSliderX = 0;
   let currentMappedSliderY = 0;
+  let apiStartSliderX = 0;
+  let apiStartSliderY = 0;
   let targetMappedSliderX = 0;
   let targetMappedSliderY = 0;
 
@@ -412,9 +426,15 @@ document.addEventListener("DOMContentLoaded", () => {
   function syncSlidersWithAPI() {
     if (apiActive && apiData) {
       reinterpretApiCoordinates();
-      // Ultra-smooth silky Lerp gliding (0.045 rate) across 2-second polling window
-      currentMappedSliderX = lerp(currentMappedSliderX, targetMappedSliderX, 0.045);
-      currentMappedSliderY = lerp(currentMappedSliderY, targetMappedSliderY, 0.045);
+      
+      // Calculate smoothstep progress t in [0, 1] over 2000ms polling interval
+      const elapsedMs = performance.now() - apiLastFetchTime;
+      const progressT = Math.max(0, Math.min(1, elapsedMs / 2000));
+      // Smoothstep cubic curve: 3*t^2 - 2*t^3
+      const smoothT = progressT * progressT * (3 - 2 * progressT);
+
+      currentMappedSliderX = apiStartSliderX + (targetMappedSliderX - apiStartSliderX) * smoothT;
+      currentMappedSliderY = apiStartSliderY + (targetMappedSliderY - apiStartSliderY) * smoothT;
 
       if (ctrlXSlider) {
         ctrlXSlider.value = Math.round(currentMappedSliderX);
@@ -1094,15 +1114,21 @@ document.addEventListener("DOMContentLoaded", () => {
           const rawX = typeof apiData.x === 'number' ? apiData.x : 2500;
           const rawY = typeof apiData.y === 'number' ? apiData.y : 2500;
 
-          // Direct 2D X/Y Axis Steering from API server data using Arduino map()
+          // Target 2D canvas coordinates
           const targetX = arduinoMap(rawX, 0, 5000, tw * 0.10, tw * 0.90);
           const targetY = arduinoMap(rawY, 0, 5000, th * 0.15, th * 0.85);
 
-          // Ultra-smooth silky Lerp gliding (0.045 rate) + subtle organic micro-drift easing
-          const microSwayX = Math.sin(animationTime * 1.5) * 1.0;
-          const microSwayY = Math.cos(animationTime * 1.8) * 0.8;
-          patrolX = lerp(patrolX, targetX, 0.045) + microSwayX;
-          patrolY = lerp(patrolY, targetY, 0.045) + microSwayY;
+          // Calculate time-aware Smoothstep cubic trajectory (3t^2 - 2t^3) across 2000ms polling window
+          const elapsedMs = performance.now() - apiLastFetchTime;
+          const progressT = Math.max(0, Math.min(1, elapsedMs / 2000));
+          const smoothT = progressT * progressT * (3 - 2 * progressT);
+
+          // Organic micro-sway for continuous 60FPS fluid gliding
+          const microSwayX = Math.sin(animationTime * 1.5) * 0.8;
+          const microSwayY = Math.cos(animationTime * 1.8) * 0.6;
+
+          patrolX = apiStartCanvasX + (targetX - apiStartCanvasX) * smoothT + microSwayX;
+          patrolY = apiStartCanvasY + (targetY - apiStartCanvasY) * smoothT + microSwayY;
         } else {
           // Smoothly interpolate user controller steering offset (Fast, responsive 0.40 rate)
           userOffsetX = lerp(userOffsetX, targetUserOffsetX, 0.40);
